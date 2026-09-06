@@ -34,7 +34,19 @@ async function sb(pathname, opts={}) {
   if(!r.ok) throw new Error('Supabase '+r.status+': '+await r.text());
   return r.status===204 ? null : r.json();
 }
-function normalizeTanks(list){ const byId=new Map((list||[]).map(t=>[Number(t.id),t])); return tanks.map(base=>{const t=byId.get(base.id)||{}; return {...base,...t,amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,alive:t.alive!==false};}); }
+function normalizeTanks(list){
+ const incoming=Array.isArray(list)?list:[];
+ const byId=new Map(incoming.map(t=>[Number(t.id),t]));
+ const baseIds=new Set(tanks.map(t=>t.id));
+ const base=tanks.map(base=>{const t=byId.get(base.id)||{}; return {...base,...t,custom:false,amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,alive:t.alive!==false};});
+ const custom=incoming.filter(t=>!baseIds.has(Number(t.id)) && t && String(t.name||'').trim()).map(t=>({
+   id:Number(t.id), name:String(t.name).trim().slice(0,80), image:String(t.image||'').trim().slice(0,1000), nation:String(t.nation||'').trim().slice(0,40), custom:true,
+   amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,
+   weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,
+   alive:t.alive!==false
+ })).filter(t=>Number.isInteger(t.id)&&t.id>0&&t.image);
+ return [...base,...custom];
+}
 async function loadState(){
   try { const rows=await sb('auction_state?id=eq.1&select=state'); if(rows?.[0]?.state?.tanks?.length) { state=rows[0].state; state.timer={...defaultTimer(),...(state.timer||{})}; state.tanks=normalizeTanks(state.tanks); state.version=6; } else await saveState(); }
   catch(e){ console.error(e.message); }
@@ -65,8 +77,28 @@ async function handle(req,res){
   if(p==='/api/admin-status'&&req.method==='GET') return json(res,200,{admin:isAdmin(req)});
   if(p==='/api/login'&&req.method==='POST'){const body=await readBody(req);if(!ADMIN_PASSWORD||body.password!==ADMIN_PASSWORD)return json(res,401,{error:'Неверный пароль'});const id=crypto.randomBytes(24).toString('hex');sessions.set(id,Date.now());res.writeHead(200,{'Set-Cookie':`laq_session=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400${req.headers['x-forwarded-proto']==='https' || req.headers['x-forwarded-proto']==='https:'?'; Secure':''}`,'Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
   if(p==='/api/logout'&&req.method==='POST'){const id=cookieSession(req);sessions.delete(id);res.writeHead(200,{'Set-Cookie':'laq_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0','Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
-  if(['/api/state','/api/tank','/api/timer','/api/undo','/api/new-round','/api/reset','/api/spin','/api/eliminate'].includes(p) && !isAdmin(req)) return json(res,403,{error:'Требуется вход администратора'});
+  if(['/api/state','/api/tank','/api/add-tank','/api/delete-tank','/api/timer','/api/undo','/api/new-round','/api/reset','/api/spin','/api/eliminate'].includes(p) && !isAdmin(req)) return json(res,403,{error:'Требуется вход администратора'});
   if(p==='/api/tank'&&req.method==='POST'){const body=await readBody(req);const id=Number(body.id);const t=state.tanks.find(x=>x.id===id);if(!t)return json(res,404,{error:'Танк не найден'});const amount=Math.max(0,Math.round(Number(body.amount)||0));previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();const oldAmount=Number(t.amount)||0;t.amount=amount;if(body.weight!==undefined)t.weight=Math.max(1,Math.min(100,Math.round(Number(body.weight)||50)));if(typeof body.alive==='boolean')t.alive=body.alive;state.tanks=normalizeTanks(state.tanks);if(amount>oldAmount){const delta=amount-oldAmount;state.recentDonations=Array.isArray(state.recentDonations)?state.recentDonations:[];state.recentDonations.unshift({id:crypto.randomBytes(8).toString('hex'),tankId:t.id,tankName:t.name,amount:delta,total:amount,at:Date.now()});state.recentDonations=state.recentDonations.slice(0,12);}await saveState();broadcast();return json(res,200,{state:publicState(),tank:t})}
+  if(p==='/api/add-tank'&&req.method==='POST'){
+    const body=await readBody(req);
+    const name=String(body.name||'').trim().slice(0,80);
+    const image=String(body.image||'').trim().slice(0,1000);
+    const nation=String(body.nation||'').trim().slice(0,40);
+    if(!name)return json(res,400,{error:'Укажи название танка'});
+    if(!/^https?:\/\//i.test(image))return json(res,400,{error:'Укажи прямую ссылку на изображение (http/https)'});
+    if(state.tanks.some(t=>t.name.toLowerCase()===name.toLowerCase()))return json(res,400,{error:'Такой танк уже есть'});
+    const maxId=state.tanks.reduce((m,t)=>Math.max(m,Number(t.id)||0),0);
+    previousStates.push(publicState()); if(previousStates.length>20)previousStates.shift();
+    const t={id:maxId+1,name,image,nation,custom:true,amount:0,weight:50,alive:true};
+    state.tanks.push(t); state.tanks=normalizeTanks(state.tanks); await saveState(); broadcast(); return json(res,200,{state:publicState(),tank:t});
+  }
+  if(p==='/api/delete-tank'&&req.method==='POST'){
+    const body=await readBody(req); const id=Number(body.id); const t=state.tanks.find(x=>x.id===id);
+    if(!t)return json(res,404,{error:'Танк не найден'});
+    if(!t.custom)return json(res,400,{error:'Стандартные танки удалить нельзя'});
+    previousStates.push(publicState()); if(previousStates.length>20)previousStates.shift();
+    state.tanks=state.tanks.filter(x=>x.id!==id); await saveState(); broadcast(); return json(res,200,{state:publicState()});
+  }
   if(p==='/api/state'&&req.method==='PUT'){const body=await readBody(req);if(!body?.tanks?.length)return json(res,400,{error:'Некорректное состояние'});previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();state={...body,version:7,updatedAt:Date.now(),timer:{...defaultTimer(),...(body.timer||{})},tanks:normalizeTanks(body.tanks),};await saveState();broadcast();return json(res,200,publicState())}
   if(p==='/api/spin'&&req.method==='POST'){
     const body=await readBody(req);
