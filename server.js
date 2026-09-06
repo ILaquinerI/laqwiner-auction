@@ -50,7 +50,11 @@ async function handle(req,res){
  const u=new URL(req.url,'http://localhost'); const p=u.pathname;
  try {
   if(req.method==='GET' && (p==='/'||p==='/index.html')) return serveFile(res,'index.html');
-  if(req.method==='GET' && (p==='/admin'||p==='/admin.html')) return serveFile(res,'admin.html');
+  if(req.method==='GET' && (p==='/admin'||p==='/admin.html')) {
+    if(!isAdmin(req)){ res.writeHead(302,{Location:'/admin-login.html','Cache-Control':'no-store'}); return res.end(); }
+    return serveFile(res,'admin.html');
+  }
+  if(req.method==='GET' && p==='/admin-login.html') return serveFile(res,'admin-login.html');
   if(req.method==='GET' && (p==='/overlay'||p==='/auction.html')) return serveFile(res,'auction.html');
   if(p==='/api/state'&&req.method==='GET') return json(res,200,publicState());
   if(p==='/api/admin-status'&&req.method==='GET') return json(res,200,{admin:isAdmin(req)});
