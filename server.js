@@ -21,7 +21,7 @@ const tanks = [
 ['AMX 50 B','F10_AMX_50B.png','Франция','ТТ'],['Tornade','F137_Tornade.png','Франция','ПТ-САУ'],['Manticore','GB100_Manticore.png','Великобритания','ЛТ'],['Concept No. 5','GB120_Concept_No_5.png','Великобритания','СТ'],
 ['Nemesis','GB128_Nemesis.png','Великобритания','СТ'],['Vz. 55','Cz17_Vz_55.png','Чехословакия','ТТ'],['Vandal','GB88_T95_Chieftain_turret.png','Великобритания','ТТ'],['113','Ch22_113.png','Китай','ТТ'],
 ['BZ-75','Ch48_BZ_75.png','Китай','ТТ'],['116-F3','Ch52_WZ_122_6_F3.png','Китай','ТТ'],['Type 5 Heavy','J20_Type_2605.png','Япония','ТТ'],['CS-63','Pl21_CS_63.png','Польша','СТ'],
-['Объект 279 ранний','R157_Object_279R.png','СССР','ТТ'],['T95/FV4201 Chieftain','GB98_T95_FV4201_Chieftain.png','Великобритания','ТТ'],['T57 Heavy Tank','A67_T57_58.png','США','ТТ'],['Leopard 1','G89_Leopard1.png','Германия','СТ'],['ИС-7','R45_IS-7.png','СССР','ТТ'],['Grille 15','G121_Grille_15_L63.png','Германия','ПТ-САУ'],['120 AC Gendarme','','Франция','ПТ-САУ'],['FV215b','GB13_FV215b.png','Великобритания','ТТ'],['BZ-74-1','Ch56_BZ_74_1.png','Китай','ТТ'],['Orso','','Италия','ТТ'],['60TP Lewandowskiego','Pl15_60TP_Lewandowskiego.png','Польша','ТТ']
+['Объект 279 ранний','R157_Object_279R.png','СССР','ТТ'],['T95/FV4201 Chieftain','GB98_T95_FV4201_Chieftain.png','Великобритания','ТТ'],['T57 Heavy Tank','A67_T57_58.png','США','ТТ'],['Leopard 1','G89_Leopard1.png','Германия','СТ'],['ИС-7','R45_IS-7.png','СССР','ТТ'],['Grille 15','G121_Grille_15_L63.png','Германия','ПТ-САУ'],['120 AC Gendarme','https://sun9-66.userapi.com/impg/Y2XHg6ETnUamuzTHz6vY7d5F1c-pkBNehO_ElA/HdsO15EeiS4.jpg?quality=95&sign=6c4d76ce36313b942996563c87ad4b82&size=600x450&type=album','Франция','ПТ-САУ'],['FV215b','GB13_FV215b.png','Великобритания','ТТ'],['BZ-74-1','Ch56_BZ_74_1.png','Китай','ТТ'],['Orso','https://tankist.net/get/inline-images/image-20250227170135-1.png','Италия','ТТ'],['60TP Lewandowskiego','Pl15_60TP_Lewandowskiego.png','Польша','ТТ']
 ].map((x,i)=>({id:i+1,name:x[0],image:x[1]?CDN+x[1]:'assets/tank-placeholder.svg',nation:x[2],class:x[3],amount:0,weight:50,alive:true}));
 const COMPLETED_SEED_IDS = new Set([33,34,35,36,37,38,39,40,41,42,43]);
 const completedSeed = tanks.filter(t=>COMPLETED_SEED_IDS.has(t.id)).map(t=>({...t,marked3:true,alive:false}));
@@ -44,7 +44,7 @@ function normalizeTanks(list){
  const base=tanks.map(base=>{
    const t=byId.get(base.id)||{};
    const completed=COMPLETED_SEED_IDS.has(base.id);
-   return {...base,...t,nation:base.nation,class:base.class,custom:false,
+   return {...base,...t,name:base.name,image:base.image,nation:base.nation,class:base.class,custom:false,
      marked3:completed ? true : t.marked3===true,
      amount:completed ? 0 : (Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0),
      weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,
