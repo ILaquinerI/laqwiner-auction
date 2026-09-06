@@ -107,7 +107,7 @@ async function handle(req,res){
     if(!picked)return json(res,400,{error:'Нет активных танков'});
     const {a,total}=activeWeighted();
     const probability=total>0?100/total:0;
-    return json(res,200,{ok:true,result:{id:picked.id,name:picked.name,amount:picked.amount,weight:picked.weight,risk:picked.risk,probability},durationSec,participants:a.map(t=>({id:t.id,name:t.name,amount:t.amount,risk:t.risk,probability:total?100/total:0}))});
+    return json(res,200,{ok:true,result:{id:picked.id,name:picked.name,amount:picked.amount},durationSec,participants:a.map(t=>({id:t.id,name:t.name,amount:t.amount,share:total?(Number(t.amount)||0)/a.reduce((s,x)=>s+(Number(x.amount)||0),0)*100:0}))});
   }
   if(p==='/api/eliminate'&&req.method==='POST'){
     const body=await readBody(req); const id=Number(body.id); const t=state.tanks.find(x=>x.id===id);
