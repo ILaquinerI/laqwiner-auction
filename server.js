@@ -47,7 +47,7 @@ function isAdmin(req){ const id=cookieSession(req); return !!(id && sessions.has
 function json(res,status,obj){ const b=JSON.stringify(obj); res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(b); }
 function readBody(req){ return new Promise((resolve,reject)=>{let b='';req.on('data',c=>{b+=c;if(b.length>2e6)reject(new Error('Body too large'))});req.on('end',()=>{try{resolve(b?JSON.parse(b):{})}catch(e){reject(e)}});req.on('error',reject)}); }
 function serveFile(res,file){ fs.readFile(path.join(ROOT,file),(e,b)=>{if(e)return res.writeHead(404).end('Not found'); const ext=path.extname(file).toLowerCase(); const types={'.html':'text/html; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8'}; const type=types[ext]||'application/octet-stream';res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});res.end(b);}); }
-function activeWeighted(){ const a=state.tanks.filter(t=>t.alive&&Number(t.amount)>0&&Number(t.weight)>0).map(t=>{const protection=Math.max(1,Math.min(100,Math.round(Number(t.weight)||50))); const risk=101-protection; return {...t,amount:Number(t.amount)||0,weight:protection,risk};}); const total=a.reduce((sum,t)=>sum+t.risk,0); return {a,total}; }
+function activeWeighted(){ const a=state.tanks.filter(t=>t.alive&&Number(t.amount)>0).map(t=>({...t,amount:Number(t.amount)||0,risk:1})); return {a,total:a.length}; }
 // Real server-side weighted randomness. Weight is configured independently in the admin panel.
 function randomPick(){ const {a,total}=activeWeighted(); if(!a.length||total<=0)return null; const roll=crypto.randomInt(0,total); let cursor=0; for(const t of a){cursor+=t.risk;if(roll<cursor)return t;} return a[a.length-1]; }
 function chances(){ const {a,total}=activeWeighted(); return Object.fromEntries(a.map(t=>[t.id,total>0?(t.risk/total)*100:0])); }
@@ -74,8 +74,8 @@ async function handle(req,res){
     const picked=randomPick();
     if(!picked)return json(res,400,{error:'Нет активных танков с заданным весом'});
     const {a,total}=activeWeighted();
-    const probability=total>0?(picked.weight/total)*100:0;
-    return json(res,200,{ok:true,result:{id:picked.id,name:picked.name,amount:picked.amount,weight:picked.weight,risk:picked.risk,probability},durationSec,participants:a.map(t=>({id:t.id,name:t.name,amount:t.amount,weight:t.weight,risk:t.risk,probability:total?(t.risk/total)*100:0}))});
+    const probability=total>0?100/total:0;
+    return json(res,200,{ok:true,result:{id:picked.id,name:picked.name,amount:picked.amount,weight:picked.weight,risk:picked.risk,probability},durationSec,participants:a.map(t=>({id:t.id,name:t.name,amount:t.amount,risk:t.risk,probability:total?100/total:0}))});
   }
   if(p==='/api/eliminate'&&req.method==='POST'){
     const body=await readBody(req); const id=Number(body.id); const t=state.tanks.find(x=>x.id===id);
