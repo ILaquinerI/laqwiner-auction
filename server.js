@@ -72,7 +72,7 @@ async function handle(req,res){
     const body=await readBody(req);
     const durationSec=Math.min(120,Math.max(3,Number(body.durationSec)||20));
     const picked=randomPick();
-    if(!picked)return json(res,400,{error:'Нет активных танков с заданным весом'});
+    if(!picked)return json(res,400,{error:'Нет активных танков'});
     const {a,total}=activeWeighted();
     const probability=total>0?100/total:0;
     return json(res,200,{ok:true,result:{id:picked.id,name:picked.name,amount:picked.amount,weight:picked.weight,risk:picked.risk,probability},durationSec,participants:a.map(t=>({id:t.id,name:t.name,amount:t.amount,risk:t.risk,probability:total?100/total:0}))});
