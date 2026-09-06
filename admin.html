@@ -35,11 +35,10 @@ function drawWheel(items, angle=wheelAngle){
    ctx.strokeStyle='#7f9bb7';ctx.lineWidth=2;ctx.stroke();
    const mid=a0+da/2;
    ctx.save();ctx.rotate(mid);ctx.textAlign='right';ctx.fillStyle='#fff';
-   ctx.font='900 27px Segoe UI,Arial';
+   const fontSize=Math.max(15,Math.min(29,12+da*18));
+   ctx.font=`900 ${fontSize}px Segoe UI,Arial`;
    let name=t.name;if(name.length>25)name=name.slice(0,24)+'…';
-   ctx.fillText(name,r-28,-10);
-   ctx.font='700 19px Segoe UI,Arial';
-   ctx.fillText(money(amount)+' · '+(w/total*100).toFixed(1)+'%',r-28,18);
+   ctx.fillText(name,r-28,5);
    ctx.restore(); a0+=da;
  });
  ctx.beginPath();ctx.arc(0,0,78,0,Math.PI*2);ctx.fillStyle='#0b121b';ctx.fill();ctx.strokeStyle='#b8c9da';ctx.lineWidth=6;ctx.stroke();ctx.restore();
@@ -67,15 +66,22 @@ async function spin(){
   const d=await api('/api/spin',{method:'POST',body:JSON.stringify({durationSec:sec})});
   const items=d.participants, target=d.result;
   const invTotal=items.reduce((sum,t)=>{const a=Math.max(0,Number(t.amount)||0);return sum+(a>0?1/a:0)},0);
-  let cursor=-Math.PI/2,targetMid=0;
+  let cursor=-Math.PI/2,targetPoint=0;
   for(const t of items){
     const a=Math.max(0,Number(t.amount)||0),w=a>0?1/a:0;
     const da=2*Math.PI*(w/invTotal);
-    if(t.id===target.id){targetMid=cursor+da/2;break;}
+    if(t.id===target.id){
+      // Не останавливаемся всегда по центру: выбираем случайную точку внутри
+      // выбранного сектора, с безопасным отступом от его краёв.
+      const margin=Math.min(0.18, da/(2*Math.PI)*0.45);
+      const fraction=margin + Math.random()*(1-margin*2);
+      targetPoint=cursor+da*fraction;
+      break;
+    }
     cursor+=da;
   }
   const startAngle=wheelAngle,turns=7;
-  let end=-Math.PI/2-targetMid+turns*2*Math.PI;
+  let end=-Math.PI/2-targetPoint+turns*2*Math.PI;
   while(end<startAngle+turns*2*Math.PI)end+=2*Math.PI;
   const t0=performance.now(),dur=sec*1000;
   function frame(now){
