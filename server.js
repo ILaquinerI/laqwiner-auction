@@ -26,7 +26,7 @@ const tanks = [
 const COMPLETED_SEED_IDS = new Set([33,34,35,36,37,38,39,40,41,42,43]);
 const completedSeed = tanks.filter(t=>COMPLETED_SEED_IDS.has(t.id)).map(t=>({...t,marked3:true,alive:false}));
 const defaultTimer = () => ({durationSec:3600, endsAt:null, running:false});
-const initial = () => ({version:8,round:1,tanks:JSON.parse(JSON.stringify(tanks)).map(t=>({...t,marked3:COMPLETED_SEED_IDS.has(t.id),alive:!COMPLETED_SEED_IDS.has(t.id)})),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
+const initial = () => ({version:9,round:1,tanks:JSON.parse(JSON.stringify(tanks)).map(t=>({...t,marked3:COMPLETED_SEED_IDS.has(t.id),alive:!COMPLETED_SEED_IDS.has(t.id)})),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
 let state = initial();
 let previousStates = [];
 const sessions = new Map();
@@ -55,8 +55,22 @@ function ensureCompletedSeeds(){
  for(const seed of completedSeed){ if(!ids.has(seed.id)) state.tanks.push(JSON.parse(JSON.stringify(seed))); }
  state.tanks=normalizeTanks(state.tanks);
 }
+function migrateCompletedSeeds(){
+  if(Number(state.version||0) >= 9) return false;
+  const completedIds=COMPLETED_SEED_IDS;
+  let changed=false;
+  state.tanks=state.tanks.map(t=>{
+    if(completedIds.has(Number(t.id))){
+      changed=true;
+      return {...t, marked3:true, alive:false, amount:0, weight:50};
+    }
+    return t;
+  });
+  state.version=9;
+  return changed;
+}
 async function loadState(){
-  try { const rows=await sb('auction_state?id=eq.1&select=state'); if(rows?.[0]?.state?.tanks?.length) { state=rows[0].state; state.timer={...defaultTimer(),...(state.timer||{})}; state.tanks=normalizeTanks(state.tanks); ensureCompletedSeeds(); state.version=8; await saveState(); } else await saveState(); }
+  try { const rows=await sb('auction_state?id=eq.1&select=state'); if(rows?.[0]?.state?.tanks?.length) { state=rows[0].state; state.timer={...defaultTimer(),...(state.timer||{})}; state.tanks=normalizeTanks(state.tanks); const migrated=migrateCompletedSeeds(); ensureCompletedSeeds(); if(migrated) state.tanks=normalizeTanks(state.tanks); await saveState(); } else await saveState(); }
   catch(e){ console.error(e.message); }
 }
 async function saveState(){ state.updatedAt=Date.now(); await sb('auction_state',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({id:1,state,updated_at:new Date().toISOString()})}); }
