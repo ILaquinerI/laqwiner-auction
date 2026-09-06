@@ -1,0 +1,206 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LAQWINER — Админка</title><style>
+*{box-sizing:border-box}body{margin:0;background:#05070b;color:#fff;font-family:Inter,system-ui,Arial}.wrap{max-width:1500px;margin:auto;padding:18px}.top{display:flex;justify-content:space-between;align-items:center}.brand{font-size:27px;font-weight:1000}.muted{font-size:11px;color:#8492a6}.sync{padding:8px 12px;border:1px solid #34455d;border-radius:999px;font-size:10px;font-weight:1000}.dash{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:13px}.metric,.panel{background:#0b1018;border:1px solid #29384e;border-radius:18px}.metric{padding:14px}.metric span{display:block;color:#8492a6;font-size:9px;font-weight:1000;letter-spacing:.12em}.metric b{font-size:24px;display:block;margin-top:5px}.panel{padding:16px;margin-top:12px}.form{display:grid;grid-template-columns:1fr 180px 150px;gap:8px}label{display:block;font-size:9px;color:#8795a8;font-weight:1000;margin-bottom:5px}input,select{width:100%;background:#070b11;border:1px solid #35465e;color:#fff;padding:11px;border-radius:10px;outline:none}button{border:0;border-radius:10px;background:#1a2637;color:#fff;padding:10px 12px;font-weight:1000;cursor:pointer}button.primary{background:#fff;color:#06080c}button.danger{background:#682833}.quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.quick button{font-size:10px}.tools{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:13px}.tools input{max-width:280px;margin-left:auto}.filters button.active{background:#fff;color:#06080c}.table{display:grid;gap:7px;margin-top:12px}.row{display:grid;grid-template-columns:36px 1fr 150px 105px 120px;gap:8px;align-items:center;border:1px solid #223047;background:#080d14;border-radius:13px;padding:7px}.row.dead{opacity:.45}.tank{display:flex;align-items:center;gap:10px}.tank img{width:105px;height:58px;object-fit:contain}.tank b{font-size:12px}.amount{font-size:15px;font-weight:1000}.status{font-size:10px;font-weight:1000}.ok{color:#7ff0ad}.bad{color:#ff9eaa}.actions{display:flex;gap:5px;flex-wrap:wrap}.notice{margin-top:10px;border:1px dashed #35455d;padding:10px;border-radius:11px;color:#8d9bad;font-size:10px}.back{color:#a9b5c6;text-decoration:none;font-size:10px}.dangerZone{display:flex;gap:7px;flex-wrap:wrap}.toast{position:fixed;right:16px;bottom:16px;background:#101a28;border:1px solid #4c6079;border-radius:12px;padding:12px 15px;display:none;z-index:10}.toast.show{display:block}
+@media(max-width:900px){.dash{grid-template-columns:repeat(2,1fr)}.form{grid-template-columns:1fr}.row{grid-template-columns:28px 1fr 100px}.row .status,.row .actions{grid-column:2/-1}}@media(max-width:600px){.wrap{padding:10px}.dash{grid-template-columns:1fr 1fr}.tank img{width:75px}}
+</style></head><body><div id="authbar" style="position:sticky;top:0;z-index:9999;display:flex;gap:10px;align-items:center;padding:8px 12px;background:#101723;color:#fff;font:600 13px system-ui"><span id="authstate">Проверка доступа…</span><button id="loginBtn" style="display:none">Войти</button><button id="logoutBtn" style="display:none">Выйти</button></div><div class="wrap"><div class="top"><div><div class="brand">⚙️ LAQWINER — АДМИНКА</div><div class="muted">Управление банками, раундами и рулеткой</div></div><div><span class="sync" id="sync">● СИНХРОНИЗАЦИЯ…</span> <a class="back" href="/">← сайт</a></div></div>
+<div class="dash"><div class="metric"><span>ОБЩИЙ БАНК</span><b id="bank">0 ₽</b></div><div class="metric"><span>С ТАНКАМИ</span><b id="active">0</b></div><div class="metric"><span>В ИГРЕ</span><b id="alive">32</b></div><div class="metric"><span>ВЫБЫЛО</span><b id="dead">0</b></div><div class="metric"><span>РАУНД</span><b id="round">#1</b></div></div>
+<section class="panel"><div class="form"><div><label>ТАНК</label><select id="select"></select></div><div><label>СУММА ₽</label><input id="amount" type="number" min="0" step="1" placeholder="1000"></div><button class="primary" onclick="saveAmount()">💾 СОХРАНИТЬ</button></div><div class="quick"><button onclick="setQ(100)">+100</button><button onclick="setQ(250)">+250</button><button onclick="setQ(500)">+500</button><button onclick="setQ(1000)">+1 000</button><button onclick="setQ(2500)">+2 500</button><button onclick="setQ(5000)">+5 000</button><button onclick="setQ(10000)">+10 000</button><button onclick="setQ(0)">0</button></div><div class="notice">💡 Поле задаёт итоговую сумму банка выбранного танка. Реальные платежи здесь не обрабатываются — админка только отражает внесённые суммы.</div></section>
+<section class="panel"><div class="tools"><button class="primary" onclick="spin()">🎰 ЗАПУСТИТЬ РУЛЕТКУ</button><button onclick="undo()">↩️ ОТМЕНИТЬ ПОСЛЕДНЕЕ</button><button onclick="newRound()">➡️ НОВЫЙ РАУНД</button><button class="danger" onclick="resetAll()">♻️ НОВЫЙ АУКЦИОН</button><input id="search" placeholder="🔎 Поиск танка" oninput="render()"></div><div class="table" id="table"></div></section>
+<section class="panel"><div class="dangerZone"><button onclick="location.href='/auction.html'">🖥 OBS OVERLAY</button><button onclick="location.href='/'">👀 ОТКРЫТЬ САЙТ</button></div></section></div><div id="toast" class="toast"></div>
+<script>let S=null,ws;const T=[
+  {
+    "id": 1,
+    "name": "T-100 ЛТ",
+    "nation": "СССР",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/R132_VNII_100LT.png"
+  },
+  {
+    "id": 2,
+    "name": "Т-62А",
+    "nation": "СССР",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/R87_T62A.png"
+  },
+  {
+    "id": 3,
+    "name": "Vulcan",
+    "nation": "Премиум",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/GB139_Vulcan.png"
+  },
+  {
+    "id": 4,
+    "name": "CS-63 Wilk",
+    "nation": "Премиум",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/Pl34_CS_63_02.png"
+  },
+  {
+    "id": 5,
+    "name": "Объект 168-122 «Квант»",
+    "nation": "СССР",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/R246_Object_168_122.png"
+  },
+  {
+    "id": 6,
+    "name": "Объект 907",
+    "nation": "СССР",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/R95_Object_907.png"
+  },
+  {
+    "id": 7,
+    "name": "Объект 277",
+    "nation": "СССР",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/R155_Object_277.png"
+  },
+  {
+    "id": 8,
+    "name": "ТЭТ-100",
+    "nation": "СССР",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/R213_TET_100.png"
+  },
+  {
+    "id": 9,
+    "name": "Объект 780",
+    "nation": "СССР",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/R178_Object_780.png"
+  },
+  {
+    "id": 10,
+    "name": "Объект 268",
+    "nation": "СССР",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/R88_Object268.png"
+  },
+  {
+    "id": 11,
+    "name": "E 50 M",
+    "nation": "Германия",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/G73_E50_Ausf_M.png"
+  },
+  {
+    "id": 12,
+    "name": "Объект 120 «Таран»",
+    "nation": "СССР",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/R222_Object_120_Taran.png"
+  },
+  {
+    "id": 13,
+    "name": "Erich Konzept I",
+    "nation": "Премиум",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/G165_Erich_Konzept_I.png"
+  },
+  {
+    "id": 14,
+    "name": "Maus",
+    "nation": "Германия",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/G42_Maus.png"
+  },
+  {
+    "id": 15,
+    "name": "StuG Maus 17 cm",
+    "nation": "Премиум",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/G181_StuG_Maus_17cm.png"
+  },
+  {
+    "id": 16,
+    "name": "Firebird",
+    "nation": "Премиум",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/A175_OTAC_MT_58_02.png"
+  },
+  {
+    "id": 17,
+    "name": "H-3",
+    "nation": "Премиум",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/A163_H_3.png"
+  },
+  {
+    "id": 18,
+    "name": "XM57",
+    "nation": "США",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/A165_XM57.png"
+  },
+  {
+    "id": 19,
+    "name": "T110E3",
+    "nation": "США",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/A85_T110E3.png"
+  },
+  {
+    "id": 20,
+    "name": "Projet Murat",
+    "nation": "Франция",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/F119_Projet_Murat.png"
+  },
+  {
+    "id": 21,
+    "name": "AMX 50 B",
+    "nation": "Франция",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/F10_AMX_50B.png"
+  },
+  {
+    "id": 22,
+    "name": "Tornade",
+    "nation": "Франция",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/F137_Tornade.png"
+  },
+  {
+    "id": 23,
+    "name": "Manticore",
+    "nation": "Великобритания",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/GB100_Manticore.png"
+  },
+  {
+    "id": 24,
+    "name": "Concept No. 5",
+    "nation": "Великобритания",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/GB120_Concept_No_5.png"
+  },
+  {
+    "id": 25,
+    "name": "Nemesis",
+    "nation": "Премиум",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/GB128_Nemesis.png"
+  },
+  {
+    "id": 26,
+    "name": "Vz. 55",
+    "nation": "Чехословакия",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/Cz17_Vz_55.png"
+  },
+  {
+    "id": 27,
+    "name": "Vandal",
+    "nation": "Премиум",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/GB88_T95_Chieftain_turret.png"
+  },
+  {
+    "id": 28,
+    "name": "113",
+    "nation": "Китай",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/Ch22_113.png"
+  },
+  {
+    "id": 29,
+    "name": "BZ-75",
+    "nation": "Китай",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/Ch48_BZ_75.png"
+  },
+  {
+    "id": 30,
+    "name": "116-F3",
+    "nation": "Китай",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/Ch52_WZ_122_6_F3.png"
+  },
+  {
+    "id": 31,
+    "name": "Type 5 Heavy",
+    "nation": "Япония",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/J20_Type_2605.png"
+  },
+  {
+    "id": 32,
+    "name": "CS-63",
+    "nation": "Польша",
+    "image": "https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/Pl21_CS_63.png"
+  }
+];const money=n=>new Intl.NumberFormat('ru-RU').format(Math.round(n||0))+' ₽';const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));async function get(){S=await(await fetch('/api/state',{cache:'no-store'})).json();render();}function connect(){try{ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws');ws.onopen=()=>sync('● СИНХРОНИЗИРОВАНО');ws.onmessage=e=>{const x=JSON.parse(e.data);if(x.type==='state'){S=x.state;render();sync('● СИНХРОНИЗИРОВАНО')}};ws.onclose=()=>{sync('● ПЕРЕПОДКЛЮЧЕНИЕ…');setTimeout(connect,1500)}}catch{setTimeout(connect,1500)}}function sync(x){document.getElementById('sync').textContent=x}function render(){if(!S)return;const active=S.tanks.filter(t=>t.alive&&t.amount>0),bank=active.reduce((a,t)=>a+t.amount,0);document.getElementById('bank').textContent=money(bank);document.getElementById('active').textContent=active.length;document.getElementById('alive').textContent=S.tanks.filter(t=>t.alive).length;document.getElementById('dead').textContent=S.tanks.filter(t=>!t.alive).length;document.getElementById('round').textContent='#'+S.round;const q=document.getElementById('search').value.toLowerCase();const ts=S.tanks.filter(t=>t.name.toLowerCase().includes(q));document.getElementById('table').innerHTML=ts.map(t=>`<div class="row ${t.alive?'':'dead'}"><b>#${t.id}</b><div class="tank"><img src="${t.image}"><b>${esc(t.name)}</b></div><div class="amount">${money(t.amount)}</div><div class="status ${t.alive?'ok':'bad'}">${t.alive?'В ИГРЕ':'ВЫБЫЛ'}</div><div class="actions"><button onclick="edit(${t.id})">Изменить</button><button onclick="toggle(${t.id})">${t.alive?'Выбить':'Вернуть'}</button></div></div>`).join('');const sel=document.getElementById('select');const cur=sel.value;sel.innerHTML=S.tanks.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');if(cur)sel.value=cur;edit(Number(sel.value)||1)}function edit(id){const t=S.tanks.find(x=>x.id===id);if(t){document.getElementById('select').value=id;document.getElementById('amount').value=t.amount}}document.getElementById('select').onchange=()=>edit(Number(document.getElementById('select').value));function setQ(v){document.getElementById('amount').value=v}async function put(n){S=await(await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(n)})).json();render();toast('Сохранено')}async function saveAmount(){const n=structuredClone(S),id=Number(document.getElementById('select').value),v=Math.max(0,Number(document.getElementById('amount').value)||0);n.tanks.find(t=>t.id===id).amount=v;await put(n)}async function toggle(id){const n=structuredClone(S),t=n.tanks.find(x=>x.id===id);t.alive=!t.alive;await put(n)}async function spin(){const r=await fetch('/api/spin',{method:'POST'}),d=await r.json();if(!r.ok)return toast(d.error);toast('Выбыл: '+d.targetName)}async function undo(){const r=await fetch('/api/undo',{method:'POST'}),d=await r.json();if(!r.ok)return toast(d.error);toast('Последнее выбытие отменено')}async function newRound(){const r=await fetch('/api/new-round',{method:'POST'}),d=await r.json();if(!r.ok)return toast(d.error);toast('Новый раунд начат')}async function resetAll(){if(!confirm('Полностью сбросить аукцион?'))return;const r=await fetch('/api/reset',{method:'POST'});S=await r.json();render();toast('Аукцион сброшен')}function toast(x){const t=document.getElementById('toast');t.textContent=x;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)}get().then(connect)</script><script>
+(async()=>{const st=document.getElementById('authstate'),li=document.getElementById('loginBtn'),lo=document.getElementById('logoutBtn');
+async function check(){const r=await fetch('/api/admin-status',{cache:'no-store'});const d=await r.json();if(d.admin){st.textContent='● АДМИН ДОСТУП РАЗРЕШЁН';li.style.display='none';lo.style.display='inline-block'}else{st.textContent='🔒 Требуется вход';li.style.display='inline-block';lo.style.display='none'}}
+li.onclick=async()=>{const p=prompt('Пароль администратора:');if(p===null)return;const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p})});if(!r.ok){alert('Неверный пароль');return}await check();location.reload()};lo.onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.reload()};await check();})();
+</script></body></html>
