@@ -44,7 +44,7 @@ function cookieSession(req){ const c=(req.headers.cookie||'').split(';').map(x=>
 function isAdmin(req){ const id=cookieSession(req); return !!(id && sessions.has(id)); }
 function json(res,status,obj){ const b=JSON.stringify(obj); res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(b); }
 function readBody(req){ return new Promise((resolve,reject)=>{let b='';req.on('data',c=>{b+=c;if(b.length>2e6)reject(new Error('Body too large'))});req.on('end',()=>{try{resolve(b?JSON.parse(b):{})}catch(e){reject(e)}});req.on('error',reject)}); }
-function serveFile(res,file){ fs.readFile(path.join(ROOT,file),(e,b)=>{if(e)return res.writeHead(404).end('Not found'); const ext=path.extname(file); const type=ext==='.html'?'text/html; charset=utf-8':'application/octet-stream';res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});res.end(b);}); }
+function serveFile(res,file){ fs.readFile(path.join(ROOT,file),(e,b)=>{if(e)return res.writeHead(404).end('Not found'); const ext=path.extname(file).toLowerCase(); const types={'.html':'text/html; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8'}; const type=types[ext]||'application/octet-stream';res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});res.end(b);}); }
 function activeWeighted(){ const a=state.tanks.filter(t=>t.alive&&Number(t.amount)>0).map(t=>({...t,amount:Number(t.amount)||0})); const total=a.reduce((s,t)=>s+t.amount,0); return {a,total}; }
 function eliminationWeights(){ const {a}=activeWeighted(); const raw=a.map(t=>1/Math.max(1,Number(t.amount)||1)); const total=raw.reduce((s,w)=>s+w,0); return {a,total,raw}; }
 function weightedPick(){ const {a,total,raw}=eliminationWeights(); if(!a.length||total<=0)return null; let r=Math.random()*total; for(let i=0;i<a.length;i++){r-=raw[i];if(r<0)return a[i]} return a[a.length-1]; }
@@ -58,7 +58,8 @@ async function handle(req,res){
     return serveFile(res,'admin.html');
   }
   if(req.method==='GET' && p==='/admin-login.html') return serveFile(res,'admin-login.html');
-  if(req.method==='GET' && (p==='/overlay'||p==='/auction.html')) return serveFile(res,'auction.html');
+  if(req.method==='GET' && (p==='/overlay'||p==='/roulette'||p==='/auction.html')) return serveFile(res,'auction.html');
+  if(req.method==='GET' && p.startsWith('/assets/')) return serveFile(res,p.slice(1));
   if(p==='/api/state'&&req.method==='GET') return json(res,200,publicState());
   if(p==='/api/admin-status'&&req.method==='GET') return json(res,200,{admin:isAdmin(req)});
   if(p==='/api/login'&&req.method==='POST'){const body=await readBody(req);if(!ADMIN_PASSWORD||body.password!==ADMIN_PASSWORD)return json(res,401,{error:'Неверный пароль'});const id=crypto.randomBytes(24).toString('hex');sessions.set(id,Date.now());res.writeHead(200,{'Set-Cookie':`laq_session=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400${req.headers['x-forwarded-proto']==='https' || req.headers['x-forwarded-proto']==='https:'?'; Secure':''}`,'Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
