@@ -76,3 +76,9 @@ Render выдаст адрес вида `https://laqwiner-auction.onrender.com`.
 - Added admin control to mark/unmark a tank as having 3 marks.
 - Canonical nation/class metadata for base tanks can no longer be overridden by stale Supabase values.
 - Renamed public/admin labels from auction wording to challenge/support wording.
+
+
+## v50 visual update
+- National flag is confined to the tank image area, not the entire card.
+- Reworked all local nation backgrounds for a cleaner in-game-like look.
+- CDN path normalized to single-slash official Tankopedia asset URLs; includes Orso and 120 AC Gendarme.

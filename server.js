@@ -11,7 +11,7 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
-const CDN = 'https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/';
+const CDN = 'https://dav-static.tanki.su/ptlru/mt/current/shop/vehicles/600x450/';
 const tanks = [
 ['T-100 ЛТ','R132_VNII_100LT.png','СССР','ЛТ'],['Т-62А','R87_T62A.png','СССР','СТ'],['Vulcan','GB139_Vulcan.png','Великобритания','СТ'],['CS-63 Wilk','Pl34_CS_63_02.png','Польша','СТ'],
 ['Объект 168-122 «Квант»','R246_Object_168_122.png','СССР','СТ'],['Объект 907','R95_Object_907.png','СССР','СТ'],['Объект 277','R155_Object_277.png','СССР','ТТ'],['ТЭТ-100','R213_TET_100.png','СССР','ТТ'],
