@@ -112,7 +112,7 @@ async function handle(req,res){
   if(p==='/api/eliminate'&&req.method==='POST'){
     const body=await readBody(req); const id=Number(body.id); const t=state.tanks.find(x=>x.id===id);
     if(!t)return json(res,404,{error:'Танк не найден'});
-    if(t.alive===false)return json(res,400,{error:'Танк уже выбыл'});
+    if(t.alive===false)return json(res,200,{ok:true,state:publicState(),remaining:state.tanks.filter(x=>x.alive!==false&&Number(x.amount)>0).length,already:true});
     const alive=state.tanks.filter(x=>x.alive!==false && Number(x.amount)>0);
     if(alive.length<=1)return json(res,400,{error:'Нельзя выбить последний танк'});
     previousStates.push(publicState()); if(previousStates.length>20)previousStates.shift();
