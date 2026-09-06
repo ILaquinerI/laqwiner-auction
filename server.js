@@ -65,7 +65,7 @@ async function handle(req,res){
   if(p==='/api/admin-status'&&req.method==='GET') return json(res,200,{admin:isAdmin(req)});
   if(p==='/api/login'&&req.method==='POST'){const body=await readBody(req);if(!ADMIN_PASSWORD||body.password!==ADMIN_PASSWORD)return json(res,401,{error:'Неверный пароль'});const id=crypto.randomBytes(24).toString('hex');sessions.set(id,Date.now());res.writeHead(200,{'Set-Cookie':`laq_session=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400${req.headers['x-forwarded-proto']==='https' || req.headers['x-forwarded-proto']==='https:'?'; Secure':''}`,'Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
   if(p==='/api/logout'&&req.method==='POST'){const id=cookieSession(req);sessions.delete(id);res.writeHead(200,{'Set-Cookie':'laq_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0','Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
-  if(['/api/state','/api/tank','/api/timer','/api/undo','/api/new-round','/api/reset'].includes(p) && !isAdmin(req)) return json(res,403,{error:'Требуется вход администратора'});
+  if(['/api/state','/api/tank','/api/timer','/api/undo','/api/new-round','/api/reset','/api/spin','/api/eliminate'].includes(p) && !isAdmin(req)) return json(res,403,{error:'Требуется вход администратора'});
   if(p==='/api/tank'&&req.method==='POST'){const body=await readBody(req);const id=Number(body.id);const t=state.tanks.find(x=>x.id===id);if(!t)return json(res,404,{error:'Танк не найден'});const amount=Math.max(0,Math.round(Number(body.amount)||0));previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();const oldAmount=Number(t.amount)||0;t.amount=amount;if(typeof body.alive==='boolean')t.alive=body.alive;state.tanks=normalizeTanks(state.tanks);if(amount>oldAmount){const delta=amount-oldAmount;state.recentDonations=Array.isArray(state.recentDonations)?state.recentDonations:[];state.recentDonations.unshift({id:crypto.randomBytes(8).toString('hex'),tankId:t.id,tankName:t.name,amount:delta,total:amount,at:Date.now()});state.recentDonations=state.recentDonations.slice(0,12);}await saveState();broadcast();return json(res,200,{state:publicState(),tank:t})}
   if(p==='/api/state'&&req.method==='PUT'){const body=await readBody(req);if(!body?.tanks?.length)return json(res,400,{error:'Некорректное состояние'});previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();state={...body,version:7,updatedAt:Date.now(),timer:{...defaultTimer(),...(body.timer||{})},tanks:normalizeTanks(body.tanks),};await saveState();broadcast();return json(res,200,publicState())}
   if(p==='/api/spin'&&req.method==='POST'){
@@ -76,6 +76,18 @@ async function handle(req,res){
     const {a,total}=activeWeighted();
     const probability=total>0?(picked.weight/total)*100:0;
     return json(res,200,{ok:true,result:{id:picked.id,name:picked.name,amount:picked.amount,weight:picked.weight,probability},durationSec,participants:a.map(t=>({id:t.id,name:t.name,amount:t.amount,weight:t.weight,probability:total?(t.weight/total)*100:0}))});
+  }
+  if(p==='/api/eliminate'&&req.method==='POST'){
+    const body=await readBody(req); const id=Number(body.id); const t=state.tanks.find(x=>x.id===id);
+    if(!t)return json(res,404,{error:'Танк не найден'});
+    if(t.alive===false)return json(res,400,{error:'Танк уже выбыл'});
+    const alive=state.tanks.filter(x=>x.alive!==false && Number(x.amount)>0);
+    if(alive.length<=1)return json(res,400,{error:'Нельзя выбить последний танк'});
+    previousStates.push(publicState()); if(previousStates.length>20)previousStates.shift();
+    t.alive=false; state.lastEliminatedId=id; state.history=Array.isArray(state.history)?state.history:[];
+    state.history.unshift({id:crypto.randomBytes(8).toString('hex'),tankId:id,tankName:t.name,amount:Number(t.amount)||0,at:Date.now(),round:state.round||1});
+    state.history=state.history.slice(0,64);
+    await saveState(); broadcast(); return json(res,200,{ok:true,state:publicState(),remaining:state.tanks.filter(x=>x.alive!==false&&Number(x.amount)>0).length});
   }
   if(p==='/api/timer'&&req.method==='POST'){const body=await readBody(req);const action=String(body.action||'');previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();const cur={...defaultTimer(),...(state.timer||{})};if(action==='set'){const minutes=Math.min(10080,Math.max(1,Number(body.minutes)||60));cur.durationSec=Math.round(minutes*60);cur.endsAt=null;cur.running=false}else if(action==='start'){cur.endsAt=Date.now()+Math.max(60,Number(cur.durationSec)||3600)*1000;cur.running=true}else if(action==='pause'){if(cur.running&&cur.endsAt)cur.durationSec=Math.max(0,Math.ceil((Number(cur.endsAt)-Date.now())/1000));cur.endsAt=null;cur.running=false}else if(action==='reset'){cur.endsAt=null;cur.running=false}else return json(res,400,{error:'Неизвестное действие таймера'});state.timer=cur;await saveState();broadcast();return json(res,200,{timer:cur,state:publicState()})}
   if(p==='/api/undo'&&req.method==='POST'){const prev=previousStates.pop();if(!prev)return json(res,400,{error:'Нечего отменять'});state=prev;await saveState();broadcast();return json(res,200,{state:publicState()})}
