@@ -46,8 +46,23 @@ function json(res,status,obj){ const b=JSON.stringify(obj); res.writeHead(status
 function readBody(req){ return new Promise((resolve,reject)=>{let b='';req.on('data',c=>{b+=c;if(b.length>2e6)reject(new Error('Body too large'))});req.on('end',()=>{try{resolve(b?JSON.parse(b):{})}catch(e){reject(e)}});req.on('error',reject)}); }
 function serveFile(res,file){ fs.readFile(path.join(ROOT,file),(e,b)=>{if(e)return res.writeHead(404).end('Not found'); const ext=path.extname(file); const type=ext==='.html'?'text/html; charset=utf-8':'application/octet-stream';res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});res.end(b);}); }
 function activeWeighted(){ const a=state.tanks.filter(t=>t.alive&&Number(t.amount)>0).map(t=>({...t,amount:Number(t.amount)||0})); const total=a.reduce((s,t)=>s+t.amount,0); return {a,total}; }
-function weightedPick(){ const {a}=activeWeighted(); if(!a.length)return null; const total=a.reduce((sum,t)=>sum+1/Math.max(1,t.amount),0); let r=Math.random()*total; for(const t of a){r-=1/Math.max(1,t.amount);if(r<0)return t} return a[a.length-1]; }
-function chances(){ const {a}=activeWeighted(); const total=a.reduce((sum,t)=>sum+1/Math.max(1,t.amount),0); return Object.fromEntries(a.map(t=>[t.id,total?(1/Math.max(1,t.amount))/total*100:0])); }
+function eliminationWeights(){
+  const {a}=activeWeighted();
+  const raw=a.map(t=>({t,w:1/Math.max(1,Number(t.amount)||1)}));
+  const total=raw.reduce((s,x)=>s+x.w,0);
+  return {a,total,raw};
+}
+function weightedPick(){
+  const {raw,total}=eliminationWeights();
+  if(!raw.length||total<=0)return null;
+  let r=Math.random()*total;
+  for(const x of raw){ r-=x.w; if(r<0)return x.t; }
+  return raw[raw.length-1].t;
+}
+function chances(){
+  const {raw,total}=eliminationWeights();
+  return Object.fromEntries(raw.map(x=>[x.t.id,total?(x.w/total*100):0]));
+}
 async function handle(req,res){
  const u=new URL(req.url,'http://localhost'); const p=u.pathname;
  try {
@@ -64,7 +79,7 @@ async function handle(req,res){
   if(p==='/api/logout'&&req.method==='POST'){const id=cookieSession(req);sessions.delete(id);res.writeHead(200,{'Set-Cookie':'laq_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0','Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
   if(['/api/state','/api/spin','/api/undo','/api/new-round','/api/reset'].includes(p) && !isAdmin(req)) return json(res,403,{error:'Требуется вход администратора'});
   if(p==='/api/state'&&req.method==='PUT'){const body=await readBody(req);if(!body?.tanks?.length)return json(res,400,{error:'Некорректное состояние'});previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();state={...body,version:3,updatedAt:Date.now()};await saveState();broadcast();return json(res,200,publicState())}
-  if(p==='/api/spin'&&req.method==='POST'){const {a:active,total}=activeWeighted();if(active.length<2||total<=0)return json(res,400,{error:'Нужно минимум 2 танка с донатами'});const target=weightedPick();previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();target.alive=false;state.lastEliminatedId=target.id;state.history.push({round:state.round,name:target.name,id:target.id,time:Date.now()});await saveState();broadcast();return json(res,200,{targetId:target.id,targetName:target.name,targetChance:(1/Math.max(1,target.amount))/active.reduce((sum,t)=>sum+1/Math.max(1,t.amount),0)*100,weights:chances(),state:publicState()})}
+  if(p==='/api/spin'&&req.method==='POST'){const {a:active,total}=activeWeighted();if(active.length<2||total<=0)return json(res,400,{error:'Нужно минимум 2 танка с донатами'});const target=weightedPick();previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();target.alive=false;state.lastEliminatedId=target.id;state.history.push({round:state.round,name:target.name,id:target.id,time:Date.now()});await saveState();broadcast();return json(res,200,{targetId:target.id,targetName:target.name,targetChance:chances()[target.id]||0,weights:chances(),state:publicState()})}
   if(p==='/api/undo'&&req.method==='POST'){const prev=previousStates.pop();if(!prev)return json(res,400,{error:'Нечего отменять'});state=prev;await saveState();broadcast();return json(res,200,{state:publicState()})}
   if(p==='/api/new-round'&&req.method==='POST'){previousStates.push(publicState());state.round++;state.lastEliminatedId=null;state.history=[];state.tanks.forEach(t=>t.alive=true);await saveState();broadcast();return json(res,200,{state:publicState()})}
   if(p==='/api/reset'&&req.method==='POST'){previousStates=[];state=initial();await saveState();broadcast();return json(res,200,publicState())}
