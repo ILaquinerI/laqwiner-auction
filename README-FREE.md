@@ -66,3 +66,13 @@ Render выдаст адрес вида `https://laqwiner-auction.onrender.com`.
 - Donation amount is displayed separately and does not set the probability.
 - Server-side selection uses Node.js `crypto.randomInt`.
 - Overlay uses weighted sector sizes and a fixed 20-second spin.
+
+
+## v44 UI updates
+- Full-card country flag backgrounds for tank cards.
+- Nation filters ordered like the game tech tree.
+- Vehicle class filters ordered: light, medium, heavy, tank destroyer.
+- Added a public tab for tanks where 3 marks have already been taken.
+- Added admin control to mark/unmark a tank as having 3 marks.
+- Canonical nation/class metadata for base tanks can no longer be overridden by stale Supabase values.
+- Renamed public/admin labels from auction wording to challenge/support wording.

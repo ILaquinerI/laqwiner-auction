@@ -23,7 +23,7 @@ const tanks = [
 ['BZ-75','Ch48_BZ_75.png','Китай','ТТ'],['116-F3','Ch52_WZ_122_6_F3.png','Китай','ТТ'],['Type 5 Heavy','J20_Type_2605.png','Япония','ТТ'],['CS-63','Pl21_CS_63.png','Польша','СТ']
 ].map((x,i)=>({id:i+1,name:x[0],image:CDN+x[1],nation:x[2],class:x[3],amount:0,weight:50,alive:true}));
 const defaultTimer = () => ({durationSec:3600, endsAt:null, running:false});
-const initial = () => ({version:7,round:1,tanks:JSON.parse(JSON.stringify(tanks)),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
+const initial = () => ({version:8,round:1,tanks:JSON.parse(JSON.stringify(tanks)).map(t=>({...t,marked3:false})),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
 let state = initial();
 let previousStates = [];
 const sessions = new Map();
@@ -38,7 +38,7 @@ function normalizeTanks(list){
  const incoming=Array.isArray(list)?list:[];
  const byId=new Map(incoming.map(t=>[Number(t.id),t]));
  const baseIds=new Set(tanks.map(t=>t.id));
- const base=tanks.map(base=>{const t=byId.get(base.id)||{}; return {...base,...t,custom:false,amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,alive:t.alive!==false};});
+ const base=tanks.map(base=>{const t=byId.get(base.id)||{}; return {...base,...t,nation:base.nation,class:base.class,custom:false,marked3:t.marked3===true,amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,alive:t.alive!==false};});
  const custom=incoming.filter(t=>!baseIds.has(Number(t.id)) && t && String(t.name||'').trim()).map(t=>({
    id:Number(t.id), name:String(t.name).trim().slice(0,80), image:String(t.image||'').trim().slice(0,1000), nation:String(t.nation||'').trim().slice(0,40), class:String(t.class||'').trim().slice(0,20), custom:true,
    amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,
@@ -48,7 +48,7 @@ function normalizeTanks(list){
  return [...base,...custom];
 }
 async function loadState(){
-  try { const rows=await sb('auction_state?id=eq.1&select=state'); if(rows?.[0]?.state?.tanks?.length) { state=rows[0].state; state.timer={...defaultTimer(),...(state.timer||{})}; state.tanks=normalizeTanks(state.tanks); state.version=6; } else await saveState(); }
+  try { const rows=await sb('auction_state?id=eq.1&select=state'); if(rows?.[0]?.state?.tanks?.length) { state=rows[0].state; state.timer={...defaultTimer(),...(state.timer||{})}; state.tanks=normalizeTanks(state.tanks); state.version=8; } else await saveState(); }
   catch(e){ console.error(e.message); }
 }
 async function saveState(){ state.updatedAt=Date.now(); await sb('auction_state',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({id:1,state,updated_at:new Date().toISOString()})}); }
@@ -59,7 +59,7 @@ function isAdmin(req){ const id=cookieSession(req); return !!(id && sessions.has
 function json(res,status,obj){ const b=JSON.stringify(obj); res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(b); }
 function readBody(req){ return new Promise((resolve,reject)=>{let b='';req.on('data',c=>{b+=c;if(b.length>2e6)reject(new Error('Body too large'))});req.on('end',()=>{try{resolve(b?JSON.parse(b):{})}catch(e){reject(e)}});req.on('error',reject)}); }
 function serveFile(res,file){ fs.readFile(path.join(ROOT,file),(e,b)=>{if(e)return res.writeHead(404).end('Not found'); const ext=path.extname(file).toLowerCase(); const types={'.html':'text/html; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8'}; const type=types[ext]||'application/octet-stream';res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});res.end(b);}); }
-function activeWeighted(){ const a=state.tanks.filter(t=>t.alive&&Number(t.amount)>0).map(t=>({...t,amount:Number(t.amount)||0,risk:1})); return {a,total:a.length}; }
+function activeWeighted(){ const a=state.tanks.filter(t=>t.alive&&t.marked3!==true&&Number(t.amount)>0).map(t=>({...t,amount:Number(t.amount)||0,risk:1})); return {a,total:a.length}; }
 // Real server-side weighted randomness. Weight is configured independently in the admin panel.
 function randomPick(){ const {a,total}=activeWeighted(); if(!a.length||total<=0)return null; const roll=crypto.randomInt(0,total); let cursor=0; for(const t of a){cursor+=t.risk;if(roll<cursor)return t;} return a[a.length-1]; }
 function chances(){ const {a,total}=activeWeighted(); return Object.fromEntries(a.map(t=>[t.id,total>0?(t.risk/total)*100:0])); }
@@ -77,8 +77,8 @@ async function handle(req,res){
   if(p==='/api/admin-status'&&req.method==='GET') return json(res,200,{admin:isAdmin(req)});
   if(p==='/api/login'&&req.method==='POST'){const body=await readBody(req);if(!ADMIN_PASSWORD||body.password!==ADMIN_PASSWORD)return json(res,401,{error:'Неверный пароль'});const id=crypto.randomBytes(24).toString('hex');sessions.set(id,Date.now());res.writeHead(200,{'Set-Cookie':`laq_session=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400${req.headers['x-forwarded-proto']==='https' || req.headers['x-forwarded-proto']==='https:'?'; Secure':''}`,'Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
   if(p==='/api/logout'&&req.method==='POST'){const id=cookieSession(req);sessions.delete(id);res.writeHead(200,{'Set-Cookie':'laq_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0','Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
-  if(['/api/state','/api/tank','/api/add-tank','/api/delete-tank','/api/timer','/api/undo','/api/new-round','/api/reset','/api/spin','/api/eliminate'].includes(p) && !isAdmin(req)) return json(res,403,{error:'Требуется вход администратора'});
-  if(p==='/api/tank'&&req.method==='POST'){const body=await readBody(req);const id=Number(body.id);const t=state.tanks.find(x=>x.id===id);if(!t)return json(res,404,{error:'Танк не найден'});const amount=Math.max(0,Math.round(Number(body.amount)||0));previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();const oldAmount=Number(t.amount)||0;t.amount=amount;if(body.weight!==undefined)t.weight=Math.max(1,Math.min(100,Math.round(Number(body.weight)||50)));if(typeof body.alive==='boolean')t.alive=body.alive;state.tanks=normalizeTanks(state.tanks);if(amount>oldAmount){const delta=amount-oldAmount;state.recentDonations=Array.isArray(state.recentDonations)?state.recentDonations:[];state.recentDonations.unshift({id:crypto.randomBytes(8).toString('hex'),tankId:t.id,tankName:t.name,amount:delta,total:amount,at:Date.now()});state.recentDonations=state.recentDonations.slice(0,12);}await saveState();broadcast();return json(res,200,{state:publicState(),tank:t})}
+  if(['/api/state','/api/tank','/api/add-tank','/api/delete-tank','/api/timer','/api/undo','/api/new-round','/api/reset','/api/spin','/api/eliminate','/api/mark-complete'].includes(p) && !isAdmin(req)) return json(res,403,{error:'Требуется вход администратора'});
+  if(p==='/api/tank'&&req.method==='POST'){const body=await readBody(req);const id=Number(body.id);const t=state.tanks.find(x=>x.id===id);if(!t)return json(res,404,{error:'Танк не найден'});const amount=Math.max(0,Math.round(Number(body.amount)||0));previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();const oldAmount=Number(t.amount)||0;t.amount=amount;if(body.weight!==undefined)t.weight=Math.max(1,Math.min(100,Math.round(Number(body.weight)||50)));if(typeof body.alive==='boolean')t.alive=body.alive;if(typeof body.marked3==='boolean')t.marked3=body.marked3;state.tanks=normalizeTanks(state.tanks);if(amount>oldAmount){const delta=amount-oldAmount;state.recentDonations=Array.isArray(state.recentDonations)?state.recentDonations:[];state.recentDonations.unshift({id:crypto.randomBytes(8).toString('hex'),tankId:t.id,tankName:t.name,amount:delta,total:amount,at:Date.now()});state.recentDonations=state.recentDonations.slice(0,12);}await saveState();broadcast();return json(res,200,{state:publicState(),tank:t})}
   if(p==='/api/add-tank'&&req.method==='POST'){
     const body=await readBody(req);
     const name=String(body.name||'').trim().slice(0,80);
@@ -100,7 +100,15 @@ async function handle(req,res){
     previousStates.push(publicState()); if(previousStates.length>20)previousStates.shift();
     state.tanks=state.tanks.filter(x=>x.id!==id); await saveState(); broadcast(); return json(res,200,{state:publicState()});
   }
-  if(p==='/api/state'&&req.method==='PUT'){const body=await readBody(req);if(!body?.tanks?.length)return json(res,400,{error:'Некорректное состояние'});previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();state={...body,version:7,updatedAt:Date.now(),timer:{...defaultTimer(),...(body.timer||{})},tanks:normalizeTanks(body.tanks),};await saveState();broadcast();return json(res,200,publicState())}
+  if(p==='/api/mark-complete'&&req.method==='POST'){
+    const body=await readBody(req); const id=Number(body.id); const t=state.tanks.find(x=>x.id===id);
+    if(!t)return json(res,404,{error:'Танк не найден'});
+    previousStates.push(publicState()); if(previousStates.length>20)previousStates.shift();
+    t.marked3=body.marked3===true; if(t.marked3)t.alive=false; else t.alive=true;
+    state.tanks=normalizeTanks(state.tanks); await saveState(); broadcast();
+    return json(res,200,{state:publicState(),tank:state.tanks.find(x=>x.id===id)});
+  }
+  if(p==='/api/state'&&req.method==='PUT'){const body=await readBody(req);if(!body?.tanks?.length)return json(res,400,{error:'Некорректное состояние'});previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();state={...body,version:8,updatedAt:Date.now(),timer:{...defaultTimer(),...(body.timer||{})},tanks:normalizeTanks(body.tanks),};await saveState();broadcast();return json(res,200,publicState())}
   if(p==='/api/spin'&&req.method==='POST'){
     const body=await readBody(req);
     const durationSec=Math.min(120,Math.max(3,Number(body.durationSec)||20));
@@ -113,18 +121,18 @@ async function handle(req,res){
   if(p==='/api/eliminate'&&req.method==='POST'){
     const body=await readBody(req); const id=Number(body.id); const t=state.tanks.find(x=>x.id===id);
     if(!t)return json(res,404,{error:'Танк не найден'});
-    if(t.alive===false)return json(res,200,{ok:true,state:publicState(),remaining:state.tanks.filter(x=>x.alive!==false&&Number(x.amount)>0).length,already:true});
-    const alive=state.tanks.filter(x=>x.alive!==false && Number(x.amount)>0);
+    if(t.alive===false)return json(res,200,{ok:true,state:publicState(),remaining:state.tanks.filter(x=>x.alive!==false&&x.marked3!==true&&Number(x.amount)>0).length,already:true});
+    const alive=state.tanks.filter(x=>x.alive!==false && x.marked3!==true && Number(x.amount)>0);
     if(alive.length<=1)return json(res,400,{error:'Нельзя выбить последний танк'});
     previousStates.push(publicState()); if(previousStates.length>20)previousStates.shift();
     t.alive=false; state.lastEliminatedId=id; state.history=Array.isArray(state.history)?state.history:[];
     state.history.unshift({id:crypto.randomBytes(8).toString('hex'),tankId:id,tankName:t.name,amount:Number(t.amount)||0,at:Date.now(),round:state.round||1});
     state.history=state.history.slice(0,64);
-    await saveState(); broadcast(); return json(res,200,{ok:true,state:publicState(),remaining:state.tanks.filter(x=>x.alive!==false&&Number(x.amount)>0).length});
+    await saveState(); broadcast(); return json(res,200,{ok:true,state:publicState(),remaining:state.tanks.filter(x=>x.alive!==false&&x.marked3!==true&&Number(x.amount)>0).length});
   }
   if(p==='/api/timer'&&req.method==='POST'){const body=await readBody(req);const action=String(body.action||'');previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();const cur={...defaultTimer(),...(state.timer||{})};if(action==='set'){const minutes=Math.min(10080,Math.max(1,Number(body.minutes)||60));cur.durationSec=Math.round(minutes*60);cur.endsAt=null;cur.running=false}else if(action==='start'){cur.endsAt=Date.now()+Math.max(60,Number(cur.durationSec)||3600)*1000;cur.running=true}else if(action==='pause'){if(cur.running&&cur.endsAt)cur.durationSec=Math.max(0,Math.ceil((Number(cur.endsAt)-Date.now())/1000));cur.endsAt=null;cur.running=false}else if(action==='reset'){cur.endsAt=null;cur.running=false}else return json(res,400,{error:'Неизвестное действие таймера'});state.timer=cur;await saveState();broadcast();return json(res,200,{timer:cur,state:publicState()})}
   if(p==='/api/undo'&&req.method==='POST'){const prev=previousStates.pop();if(!prev)return json(res,400,{error:'Нечего отменять'});state=prev;await saveState();broadcast();return json(res,200,{state:publicState()})}
-  if(p==='/api/new-round'&&req.method==='POST'){previousStates.push(publicState());state.round++;state.lastEliminatedId=null;state.history=[];state.tanks.forEach(t=>t.alive=true);state.timer={...defaultTimer(),...(state.timer||{}),endsAt:null,running:false};await saveState();broadcast();return json(res,200,{state:publicState()})}
+  if(p==='/api/new-round'&&req.method==='POST'){previousStates.push(publicState());state.round++;state.lastEliminatedId=null;state.history=[];state.tanks.forEach(t=>{if(t.marked3!==true)t.alive=true;});state.timer={...defaultTimer(),...(state.timer||{}),endsAt:null,running:false};await saveState();broadcast();return json(res,200,{state:publicState()})}
   if(p==='/api/reset'&&req.method==='POST'){previousStates=[];state=initial();await saveState();broadcast();return json(res,200,publicState())}
   res.writeHead(404);res.end('Not found');
  } catch(e){ console.error(e); json(res,500,{error:e.message||'Server error'}); }
