@@ -26,7 +26,7 @@ const tanks = [
 const COMPLETED_SEED_IDS = new Set([33,34,35,36,37,38,39,40,41,42,43]);
 const completedSeed = tanks.filter(t=>COMPLETED_SEED_IDS.has(t.id)).map(t=>({...t,marked3:true,alive:false}));
 const defaultTimer = () => ({durationSec:3600, endsAt:null, running:false});
-const initial = () => ({version:9,round:1,tanks:JSON.parse(JSON.stringify(tanks)).map(t=>({...t,marked3:COMPLETED_SEED_IDS.has(t.id),alive:!COMPLETED_SEED_IDS.has(t.id)})),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
+const initial = () => ({version:10,round:1,tanks:JSON.parse(JSON.stringify(tanks)).map(t=>({...t,marked3:COMPLETED_SEED_IDS.has(t.id),alive:!COMPLETED_SEED_IDS.has(t.id)})),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
 let state = initial();
 let previousStates = [];
 const sessions = new Map();
@@ -41,7 +41,15 @@ function normalizeTanks(list){
  const incoming=Array.isArray(list)?list:[];
  const byId=new Map(incoming.map(t=>[Number(t.id),t]));
  const baseIds=new Set(tanks.map(t=>t.id));
- const base=tanks.map(base=>{const t=byId.get(base.id)||{}; return {...base,...t,nation:base.nation,class:base.class,custom:false,marked3:t.marked3===true,amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,alive:t.alive!==false};});
+ const base=tanks.map(base=>{
+   const t=byId.get(base.id)||{};
+   const completed=COMPLETED_SEED_IDS.has(base.id);
+   return {...base,...t,nation:base.nation,class:base.class,custom:false,
+     marked3:completed ? true : t.marked3===true,
+     amount:completed ? 0 : (Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0),
+     weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,
+     alive:completed ? false : t.alive!==false};
+ });
  const custom=incoming.filter(t=>!baseIds.has(Number(t.id)) && t && String(t.name||'').trim()).map(t=>({
    id:Number(t.id), name:String(t.name).trim().slice(0,80), image:String(t.image||'').trim().slice(0,1000), nation:String(t.nation||'').trim().slice(0,40), class:String(t.class||'').trim().slice(0,20), custom:true, marked3:t.marked3===true,
    amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,
@@ -56,7 +64,7 @@ function ensureCompletedSeeds(){
  state.tanks=normalizeTanks(state.tanks);
 }
 function migrateCompletedSeeds(){
-  if(Number(state.version||0) >= 9) return false;
+  if(Number(state.version||0) >= 10) return false;
   const completedIds=COMPLETED_SEED_IDS;
   let changed=false;
   state.tanks=state.tanks.map(t=>{
@@ -66,7 +74,7 @@ function migrateCompletedSeeds(){
     }
     return t;
   });
-  state.version=9;
+  state.version=10;
   return changed;
 }
 async function loadState(){
@@ -130,7 +138,7 @@ async function handle(req,res){
     state.tanks=normalizeTanks(state.tanks); await saveState(); broadcast();
     return json(res,200,{state:publicState(),tank:state.tanks.find(x=>x.id===id)});
   }
-  if(p==='/api/state'&&req.method==='PUT'){const body=await readBody(req);if(!body?.tanks?.length)return json(res,400,{error:'Некорректное состояние'});previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();state={...body,version:8,updatedAt:Date.now(),timer:{...defaultTimer(),...(body.timer||{})},tanks:normalizeTanks(body.tanks),};await saveState();broadcast();return json(res,200,publicState())}
+  if(p==='/api/state'&&req.method==='PUT'){const body=await readBody(req);if(!body?.tanks?.length)return json(res,400,{error:'Некорректное состояние'});previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();state={...body,version:10,updatedAt:Date.now(),timer:{...defaultTimer(),...(body.timer||{})},tanks:normalizeTanks(body.tanks),};await saveState();broadcast();return json(res,200,publicState())}
   if(p==='/api/spin'&&req.method==='POST'){
     const body=await readBody(req);
     const durationSec=Math.min(120,Math.max(3,Number(body.durationSec)||20));
