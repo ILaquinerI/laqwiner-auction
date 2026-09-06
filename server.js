@@ -20,10 +20,13 @@ const tanks = [
 ['H-3','A163_H_3.png','США','ТТ'],['XM57','A165_XM57.png','США','ПТ-САУ'],['T110E3','A85_T110E3.png','США','ПТ-САУ'],['Projet Murat','F119_Projet_Murat.png','Франция','СТ'],
 ['AMX 50 B','F10_AMX_50B.png','Франция','ТТ'],['Tornade','F137_Tornade.png','Франция','ПТ-САУ'],['Manticore','GB100_Manticore.png','Великобритания','ЛТ'],['Concept No. 5','GB120_Concept_No_5.png','Великобритания','СТ'],
 ['Nemesis','GB128_Nemesis.png','Великобритания','СТ'],['Vz. 55','Cz17_Vz_55.png','Чехословакия','ТТ'],['Vandal','GB88_T95_Chieftain_turret.png','Великобритания','ТТ'],['113','Ch22_113.png','Китай','ТТ'],
-['BZ-75','Ch48_BZ_75.png','Китай','ТТ'],['116-F3','Ch52_WZ_122_6_F3.png','Китай','ТТ'],['Type 5 Heavy','J20_Type_2605.png','Япония','ТТ'],['CS-63','Pl21_CS_63.png','Польша','СТ']
-].map((x,i)=>({id:i+1,name:x[0],image:CDN+x[1],nation:x[2],class:x[3],amount:0,weight:50,alive:true}));
+['BZ-75','Ch48_BZ_75.png','Китай','ТТ'],['116-F3','Ch52_WZ_122_6_F3.png','Китай','ТТ'],['Type 5 Heavy','J20_Type_2605.png','Япония','ТТ'],['CS-63','Pl21_CS_63.png','Польша','СТ'],
+['Объект 279 ранний','R157_Object_279R.png','СССР','ТТ'],['T95/FV4201 Chieftain','GB98_T95_FV4201_Chieftain.png','Великобритания','ТТ'],['T57 Heavy Tank','A67_T57_58.png','США','ТТ'],['Leopard 1','G89_Leopard1.png','Германия','СТ'],['ИС-7','R45_IS-7.png','СССР','ТТ'],['Grille 15','G121_Grille_15_L63.png','Германия','ПТ-САУ'],['120 AC Gendarme','','Франция','ПТ-САУ'],['FV215b','GB13_FV215b.png','Великобритания','ТТ'],['BZ-74-1','Ch56_BZ_74_1.png','Китай','ТТ'],['Orso','','Италия','ТТ'],['60TP Lewandowskiego','Pl15_60TP_Lewandowskiego.png','Польша','ТТ']
+].map((x,i)=>({id:i+1,name:x[0],image:x[1]?CDN+x[1]:'assets/tank-placeholder.svg',nation:x[2],class:x[3],amount:0,weight:50,alive:true}));
+const COMPLETED_SEED_IDS = new Set([33,34,35,36,37,38,39,40,41,42,43]);
+const completedSeed = tanks.filter(t=>COMPLETED_SEED_IDS.has(t.id)).map(t=>({...t,marked3:true,alive:false}));
 const defaultTimer = () => ({durationSec:3600, endsAt:null, running:false});
-const initial = () => ({version:8,round:1,tanks:JSON.parse(JSON.stringify(tanks)).map(t=>({...t,marked3:false})),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
+const initial = () => ({version:8,round:1,tanks:JSON.parse(JSON.stringify(tanks)).map(t=>({...t,marked3:COMPLETED_SEED_IDS.has(t.id),alive:!COMPLETED_SEED_IDS.has(t.id)})),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
 let state = initial();
 let previousStates = [];
 const sessions = new Map();
@@ -40,15 +43,20 @@ function normalizeTanks(list){
  const baseIds=new Set(tanks.map(t=>t.id));
  const base=tanks.map(base=>{const t=byId.get(base.id)||{}; return {...base,...t,nation:base.nation,class:base.class,custom:false,marked3:t.marked3===true,amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,alive:t.alive!==false};});
  const custom=incoming.filter(t=>!baseIds.has(Number(t.id)) && t && String(t.name||'').trim()).map(t=>({
-   id:Number(t.id), name:String(t.name).trim().slice(0,80), image:String(t.image||'').trim().slice(0,1000), nation:String(t.nation||'').trim().slice(0,40), class:String(t.class||'').trim().slice(0,20), custom:true,
+   id:Number(t.id), name:String(t.name).trim().slice(0,80), image:String(t.image||'').trim().slice(0,1000), nation:String(t.nation||'').trim().slice(0,40), class:String(t.class||'').trim().slice(0,20), custom:true, marked3:t.marked3===true,
    amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,
    weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,
    alive:t.alive!==false
  })).filter(t=>Number.isInteger(t.id)&&t.id>0&&t.image);
  return [...base,...custom];
 }
+function ensureCompletedSeeds(){
+ const ids=new Set(state.tanks.map(t=>Number(t.id)));
+ for(const seed of completedSeed){ if(!ids.has(seed.id)) state.tanks.push(JSON.parse(JSON.stringify(seed))); }
+ state.tanks=normalizeTanks(state.tanks);
+}
 async function loadState(){
-  try { const rows=await sb('auction_state?id=eq.1&select=state'); if(rows?.[0]?.state?.tanks?.length) { state=rows[0].state; state.timer={...defaultTimer(),...(state.timer||{})}; state.tanks=normalizeTanks(state.tanks); state.version=8; } else await saveState(); }
+  try { const rows=await sb('auction_state?id=eq.1&select=state'); if(rows?.[0]?.state?.tanks?.length) { state=rows[0].state; state.timer={...defaultTimer(),...(state.timer||{})}; state.tanks=normalizeTanks(state.tanks); ensureCompletedSeeds(); state.version=8; await saveState(); } else await saveState(); }
   catch(e){ console.error(e.message); }
 }
 async function saveState(){ state.updatedAt=Date.now(); await sb('auction_state',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({id:1,state,updated_at:new Date().toISOString()})}); }
