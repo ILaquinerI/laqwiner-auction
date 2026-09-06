@@ -51,3 +51,18 @@ Render выдаст адрес вида `https://laqwiner-auction.onrender.com`.
 - Это вариант для теста/стримов, а не гарантия 24/7 production.
 
 Когда понадобится постоянная работа, этот же проект можно перенести на VPS без переделки интерфейсов.
+
+
+## v22 wheel rules
+- The server selects the eliminated tank using Node.js crypto.randomInt.
+- Every funded and still-alive tank has the same probability in the current dropout round.
+- The wheel is visual only and runs for a fixed 20 seconds; the server result is authoritative.
+- The public table labels the metric as 'Шанс выиграть'. Eliminated tanks show 0% / ВЫБЫЛ.
+
+
+## v23
+- Each tank has an independent `weight` field in admin.
+- Winning probability = tank weight / sum of active funded tank weights.
+- Donation amount is displayed separately and does not set the probability.
+- Server-side selection uses Node.js `crypto.randomInt`.
+- Overlay uses weighted sector sizes and a fixed 20-second spin.
