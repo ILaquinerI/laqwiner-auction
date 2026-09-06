@@ -21,7 +21,7 @@ const tanks = [
 ['AMX 50 B','F10_AMX_50B.png'],['Tornade','F137_Tornade.png'],['Manticore','GB100_Manticore.png'],['Concept No. 5','GB120_Concept_No_5.png'],
 ['Nemesis','GB128_Nemesis.png'],['Vz. 55','Cz17_Vz_55.png'],['Vandal','GB88_T95_Chieftain_turret.png'],['113','Ch22_113.png'],
 ['BZ-75','Ch48_BZ_75.png'],['116-F3','Ch52_WZ_122_6_F3.png'],['Type 5 Heavy','J20_Type_2605.png'],['CS-63','Pl21_CS_63.png']
-].map((x,i)=>({id:i+1,name:x[0],image:CDN+x[1],amount:0,weight:1,alive:true}));
+].map((x,i)=>({id:i+1,name:x[0],image:CDN+x[1],amount:0,weight:50,alive:true}));
 const defaultTimer = () => ({durationSec:3600, endsAt:null, running:false});
 const initial = () => ({version:7,round:1,tanks:JSON.parse(JSON.stringify(tanks)),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
 let state = initial();
@@ -34,7 +34,7 @@ async function sb(pathname, opts={}) {
   if(!r.ok) throw new Error('Supabase '+r.status+': '+await r.text());
   return r.status===204 ? null : r.json();
 }
-function normalizeTanks(list){ const byId=new Map((list||[]).map(t=>[Number(t.id),t])); return tanks.map(base=>{const t=byId.get(base.id)||{}; return {...base,...t,amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,weight:Number.isFinite(Number(t.weight))?Math.max(0,Math.min(1000000,Math.round(Number(t.weight)))):1,alive:t.alive!==false};}); }
+function normalizeTanks(list){ const byId=new Map((list||[]).map(t=>[Number(t.id),t])); return tanks.map(base=>{const t=byId.get(base.id)||{}; return {...base,...t,amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,alive:t.alive!==false};}); }
 async function loadState(){
   try { const rows=await sb('auction_state?id=eq.1&select=state'); if(rows?.[0]?.state?.tanks?.length) { state=rows[0].state; state.timer={...defaultTimer(),...(state.timer||{})}; state.tanks=normalizeTanks(state.tanks); state.version=6; } else await saveState(); }
   catch(e){ console.error(e.message); }
@@ -47,10 +47,10 @@ function isAdmin(req){ const id=cookieSession(req); return !!(id && sessions.has
 function json(res,status,obj){ const b=JSON.stringify(obj); res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(b); }
 function readBody(req){ return new Promise((resolve,reject)=>{let b='';req.on('data',c=>{b+=c;if(b.length>2e6)reject(new Error('Body too large'))});req.on('end',()=>{try{resolve(b?JSON.parse(b):{})}catch(e){reject(e)}});req.on('error',reject)}); }
 function serveFile(res,file){ fs.readFile(path.join(ROOT,file),(e,b)=>{if(e)return res.writeHead(404).end('Not found'); const ext=path.extname(file).toLowerCase(); const types={'.html':'text/html; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8'}; const type=types[ext]||'application/octet-stream';res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});res.end(b);}); }
-function activeWeighted(){ const a=state.tanks.filter(t=>t.alive&&Number(t.amount)>0&&Number(t.weight)>0).map(t=>({...t,amount:Number(t.amount)||0,weight:Math.max(0,Math.round(Number(t.weight)||0))})); const total=a.reduce((sum,t)=>sum+t.weight,0); return {a,total}; }
+function activeWeighted(){ const a=state.tanks.filter(t=>t.alive&&Number(t.amount)>0&&Number(t.weight)>0).map(t=>{const protection=Math.max(1,Math.min(100,Math.round(Number(t.weight)||50))); const risk=101-protection; return {...t,amount:Number(t.amount)||0,weight:protection,risk};}); const total=a.reduce((sum,t)=>sum+t.risk,0); return {a,total}; }
 // Real server-side weighted randomness. Weight is configured independently in the admin panel.
-function randomPick(){ const {a,total}=activeWeighted(); if(!a.length||total<=0)return null; const roll=crypto.randomInt(0,total); let cursor=0; for(const t of a){cursor+=t.weight;if(roll<cursor)return t;} return a[a.length-1]; }
-function chances(){ const {a,total}=activeWeighted(); return Object.fromEntries(a.map(t=>[t.id,total>0?(t.weight/total)*100:0])); }
+function randomPick(){ const {a,total}=activeWeighted(); if(!a.length||total<=0)return null; const roll=crypto.randomInt(0,total); let cursor=0; for(const t of a){cursor+=t.risk;if(roll<cursor)return t;} return a[a.length-1]; }
+function chances(){ const {a,total}=activeWeighted(); return Object.fromEntries(a.map(t=>[t.id,total>0?(t.risk/total)*100:0])); }
 async function handle(req,res){
  const u=new URL(req.url,'http://localhost'); const p=u.pathname;
  try {
@@ -66,7 +66,7 @@ async function handle(req,res){
   if(p==='/api/login'&&req.method==='POST'){const body=await readBody(req);if(!ADMIN_PASSWORD||body.password!==ADMIN_PASSWORD)return json(res,401,{error:'Неверный пароль'});const id=crypto.randomBytes(24).toString('hex');sessions.set(id,Date.now());res.writeHead(200,{'Set-Cookie':`laq_session=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400${req.headers['x-forwarded-proto']==='https' || req.headers['x-forwarded-proto']==='https:'?'; Secure':''}`,'Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
   if(p==='/api/logout'&&req.method==='POST'){const id=cookieSession(req);sessions.delete(id);res.writeHead(200,{'Set-Cookie':'laq_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0','Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
   if(['/api/state','/api/tank','/api/timer','/api/undo','/api/new-round','/api/reset','/api/spin','/api/eliminate'].includes(p) && !isAdmin(req)) return json(res,403,{error:'Требуется вход администратора'});
-  if(p==='/api/tank'&&req.method==='POST'){const body=await readBody(req);const id=Number(body.id);const t=state.tanks.find(x=>x.id===id);if(!t)return json(res,404,{error:'Танк не найден'});const amount=Math.max(0,Math.round(Number(body.amount)||0));previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();const oldAmount=Number(t.amount)||0;t.amount=amount;if(body.weight!==undefined)t.weight=Math.max(1,Math.min(1000000,Math.round(Number(body.weight)||1)));if(typeof body.alive==='boolean')t.alive=body.alive;state.tanks=normalizeTanks(state.tanks);if(amount>oldAmount){const delta=amount-oldAmount;state.recentDonations=Array.isArray(state.recentDonations)?state.recentDonations:[];state.recentDonations.unshift({id:crypto.randomBytes(8).toString('hex'),tankId:t.id,tankName:t.name,amount:delta,total:amount,at:Date.now()});state.recentDonations=state.recentDonations.slice(0,12);}await saveState();broadcast();return json(res,200,{state:publicState(),tank:t})}
+  if(p==='/api/tank'&&req.method==='POST'){const body=await readBody(req);const id=Number(body.id);const t=state.tanks.find(x=>x.id===id);if(!t)return json(res,404,{error:'Танк не найден'});const amount=Math.max(0,Math.round(Number(body.amount)||0));previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();const oldAmount=Number(t.amount)||0;t.amount=amount;if(body.weight!==undefined)t.weight=Math.max(1,Math.min(100,Math.round(Number(body.weight)||50)));if(typeof body.alive==='boolean')t.alive=body.alive;state.tanks=normalizeTanks(state.tanks);if(amount>oldAmount){const delta=amount-oldAmount;state.recentDonations=Array.isArray(state.recentDonations)?state.recentDonations:[];state.recentDonations.unshift({id:crypto.randomBytes(8).toString('hex'),tankId:t.id,tankName:t.name,amount:delta,total:amount,at:Date.now()});state.recentDonations=state.recentDonations.slice(0,12);}await saveState();broadcast();return json(res,200,{state:publicState(),tank:t})}
   if(p==='/api/state'&&req.method==='PUT'){const body=await readBody(req);if(!body?.tanks?.length)return json(res,400,{error:'Некорректное состояние'});previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();state={...body,version:7,updatedAt:Date.now(),timer:{...defaultTimer(),...(body.timer||{})},tanks:normalizeTanks(body.tanks),};await saveState();broadcast();return json(res,200,publicState())}
   if(p==='/api/spin'&&req.method==='POST'){
     const body=await readBody(req);
@@ -75,7 +75,7 @@ async function handle(req,res){
     if(!picked)return json(res,400,{error:'Нет активных танков с заданным весом'});
     const {a,total}=activeWeighted();
     const probability=total>0?(picked.weight/total)*100:0;
-    return json(res,200,{ok:true,result:{id:picked.id,name:picked.name,amount:picked.amount,weight:picked.weight,probability},durationSec,participants:a.map(t=>({id:t.id,name:t.name,amount:t.amount,weight:t.weight,probability:total?(t.weight/total)*100:0}))});
+    return json(res,200,{ok:true,result:{id:picked.id,name:picked.name,amount:picked.amount,weight:picked.weight,risk:picked.risk,probability},durationSec,participants:a.map(t=>({id:t.id,name:t.name,amount:t.amount,weight:t.weight,risk:t.risk,probability:total?(t.risk/total)*100:0}))});
   }
   if(p==='/api/eliminate'&&req.method==='POST'){
     const body=await readBody(req); const id=Number(body.id); const t=state.tanks.find(x=>x.id===id);
