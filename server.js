@@ -14,13 +14,13 @@ const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toSt
 const CDN = 'https://dav-static.tanki.su//ptlru/mt/current/shop/vehicles/600x450/';
 const tanks = [
 ['T-100 ЛТ','R132_VNII_100LT.png','СССР','ЛТ'],['Т-62А','R87_T62A.png','СССР','СТ'],['Vulcan','GB139_Vulcan.png','Великобритания','СТ'],['CS-63 Wilk','Pl34_CS_63_02.png','Польша','СТ'],
-['Объект 168-122 «Квант»','R246_Object_168_122.png','Китай','ТТ'],['Объект 907','R95_Object_907.png','СССР','СТ'],['Объект 277','R155_Object_277.png','СССР','ТТ'],['ТЭТ-100','R213_TET_100.png','СССР','ПТ-САУ'],
+['Объект 168-122 «Квант»','R246_Object_168_122.png','СССР','СТ'],['Объект 907','R95_Object_907.png','СССР','СТ'],['Объект 277','R155_Object_277.png','СССР','ТТ'],['ТЭТ-100','R213_TET_100.png','СССР','ТТ'],
 ['Объект 780','R178_Object_780.png','СССР','ТТ'],['Объект 268','R88_Object268.png','СССР','ПТ-САУ'],['E 50 M','G73_E50_Ausf_M.png','Германия','СТ'],['Объект 120 «Таран»','R222_Object_120_Taran.png','СССР','ПТ-САУ'],
-['Erich Konzept I','G165_Erich_Konzept_I.png','Германия','ТТ'],['Maus','G42_Maus.png','Германия','ТТ'],['StuG Maus 17 cm','G181_StuG_Maus_17cm.png','Германия','ПТ-САУ'],['Firebird','A175_OTAC_MT_58_02.png','США','ЛТ'],
-['H-3','A163_H_3.png','США','ЛТ'],['XM57','A165_XM57.png','США','ПТ-САУ'],['T110E3','A85_T110E3.png','США','ПТ-САУ'],['Projet Murat','F119_Projet_Murat.png','Франция','ТТ'],
-['AMX 50 B','F10_AMX_50B.png','Франция','ТТ'],['Tornade','F137_Tornade.png','Франция','СТ'],['Manticore','GB100_Manticore.png','Великобритания','ЛТ'],['Concept No. 5','GB120_Concept_No_5.png','Великобритания','ТТ'],
-['Nemesis','GB128_Nemesis.png','Великобритания','ТТ'],['Vz. 55','Cz17_Vz_55.png','Чехословакия','ТТ'],['Vandal','GB88_T95_Chieftain_turret.png','Великобритания','ТТ'],['113','Ch22_113.png','Китай','ТТ'],
-['BZ-75','Ch48_BZ_75.png','Китай','ТТ'],['116-F3','Ch52_WZ_122_6_F3.png','Китай','ПТ-САУ'],['Type 5 Heavy','J20_Type_2605.png','Япония','ТТ'],['CS-63','Pl21_CS_63.png','Польша','СТ']
+['Erich Konzept I','G165_Erich_Konzept_I.png','Германия','СТ'],['Maus','G42_Maus.png','Германия','ТТ'],['StuG Maus 17 cm','G181_StuG_Maus_17cm.png','Германия','ПТ-САУ'],['Firebird','A175_OTAC_MT_58_02.png','США','СТ'],
+['H-3','A163_H_3.png','США','ТТ'],['XM57','A165_XM57.png','США','ПТ-САУ'],['T110E3','A85_T110E3.png','США','ПТ-САУ'],['Projet Murat','F119_Projet_Murat.png','Франция','СТ'],
+['AMX 50 B','F10_AMX_50B.png','Франция','ТТ'],['Tornade','F137_Tornade.png','Франция','ПТ-САУ'],['Manticore','GB100_Manticore.png','Великобритания','ЛТ'],['Concept No. 5','GB120_Concept_No_5.png','Великобритания','СТ'],
+['Nemesis','GB128_Nemesis.png','Великобритания','СТ'],['Vz. 55','Cz17_Vz_55.png','Чехословакия','ТТ'],['Vandal','GB88_T95_Chieftain_turret.png','Великобритания','ТТ'],['113','Ch22_113.png','Китай','ТТ'],
+['BZ-75','Ch48_BZ_75.png','Китай','ТТ'],['116-F3','Ch52_WZ_122_6_F3.png','Китай','ТТ'],['Type 5 Heavy','J20_Type_2605.png','Япония','ТТ'],['CS-63','Pl21_CS_63.png','Польша','СТ']
 ].map((x,i)=>({id:i+1,name:x[0],image:CDN+x[1],nation:x[2],class:x[3],amount:0,weight:50,alive:true}));
 const defaultTimer = () => ({durationSec:3600, endsAt:null, running:false});
 const initial = () => ({version:7,round:1,tanks:JSON.parse(JSON.stringify(tanks)),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
