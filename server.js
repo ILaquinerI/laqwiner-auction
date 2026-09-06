@@ -22,7 +22,8 @@ const tanks = [
 ['Nemesis','GB128_Nemesis.png'],['Vz. 55','Cz17_Vz_55.png'],['Vandal','GB88_T95_Chieftain_turret.png'],['113','Ch22_113.png'],
 ['BZ-75','Ch48_BZ_75.png'],['116-F3','Ch52_WZ_122_6_F3.png'],['Type 5 Heavy','J20_Type_2605.png'],['CS-63','Pl21_CS_63.png']
 ].map((x,i)=>({id:i+1,name:x[0],image:CDN+x[1],amount:0,alive:true}));
-const initial = () => ({version:3,round:1,tanks:JSON.parse(JSON.stringify(tanks)),history:[],recentDonations:[],lastEliminatedId:null,updatedAt:Date.now()});
+const defaultTimer = () => ({durationSec:3600, endsAt:null, running:false});
+const initial = () => ({version:4,round:1,tanks:JSON.parse(JSON.stringify(tanks)),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
 let state = initial();
 let previousStates = [];
 const sessions = new Map();
@@ -34,7 +35,7 @@ async function sb(pathname, opts={}) {
   return r.status===204 ? null : r.json();
 }
 async function loadState(){
-  try { const rows=await sb('auction_state?id=eq.1&select=state'); if(rows?.[0]?.state?.tanks?.length) state=rows[0].state; else await saveState(); }
+  try { const rows=await sb('auction_state?id=eq.1&select=state'); if(rows?.[0]?.state?.tanks?.length) { state=rows[0].state; state.timer={...defaultTimer(),...(state.timer||{})}; state.version=4; } else await saveState(); }
   catch(e){ console.error(e.message); }
 }
 async function saveState(){ state.updatedAt=Date.now(); await sb('auction_state',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({id:1,state,updated_at:new Date().toISOString()})}); }
@@ -64,11 +65,12 @@ async function handle(req,res){
   if(p==='/api/admin-status'&&req.method==='GET') return json(res,200,{admin:isAdmin(req)});
   if(p==='/api/login'&&req.method==='POST'){const body=await readBody(req);if(!ADMIN_PASSWORD||body.password!==ADMIN_PASSWORD)return json(res,401,{error:'Неверный пароль'});const id=crypto.randomBytes(24).toString('hex');sessions.set(id,Date.now());res.writeHead(200,{'Set-Cookie':`laq_session=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400${req.headers['x-forwarded-proto']==='https' || req.headers['x-forwarded-proto']==='https:'?'; Secure':''}`,'Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
   if(p==='/api/logout'&&req.method==='POST'){const id=cookieSession(req);sessions.delete(id);res.writeHead(200,{'Set-Cookie':'laq_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0','Content-Type':'application/json'});return res.end(JSON.stringify({ok:true}))}
-  if(['/api/state','/api/spin','/api/undo','/api/new-round','/api/reset'].includes(p) && !isAdmin(req)) return json(res,403,{error:'Требуется вход администратора'});
-  if(p==='/api/state'&&req.method==='PUT'){const body=await readBody(req);if(!body?.tanks?.length)return json(res,400,{error:'Некорректное состояние'});previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();state={...body,version:3,updatedAt:Date.now(),tanks:body.tanks.map(t=>({...t,amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,alive:t.alive!==false}))};await saveState();broadcast();return json(res,200,publicState())}
+  if(['/api/state','/api/timer','/api/spin','/api/undo','/api/new-round','/api/reset'].includes(p) && !isAdmin(req)) return json(res,403,{error:'Требуется вход администратора'});
+  if(p==='/api/state'&&req.method==='PUT'){const body=await readBody(req);if(!body?.tanks?.length)return json(res,400,{error:'Некорректное состояние'});previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();state={...body,version:4,updatedAt:Date.now(),timer:{...defaultTimer(),...(body.timer||{})},tanks:body.tanks.map(t=>({...t,amount:Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0,alive:t.alive!==false}))};await saveState();broadcast();return json(res,200,publicState())}
+  if(p==='/api/timer'&&req.method==='POST'){const body=await readBody(req);const action=String(body.action||'');previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();const cur={...defaultTimer(),...(state.timer||{})};if(action==='set'){const minutes=Math.min(10080,Math.max(1,Number(body.minutes)||60));cur.durationSec=Math.round(minutes*60);cur.endsAt=null;cur.running=false}else if(action==='start'){cur.endsAt=Date.now()+Math.max(60,Number(cur.durationSec)||3600)*1000;cur.running=true}else if(action==='pause'){if(cur.running&&cur.endsAt)cur.durationSec=Math.max(0,Math.ceil((Number(cur.endsAt)-Date.now())/1000));cur.endsAt=null;cur.running=false}else if(action==='reset'){cur.endsAt=null;cur.running=false}else return json(res,400,{error:'Неизвестное действие таймера'});state.timer=cur;await saveState();broadcast();return json(res,200,{timer:cur,state:publicState()})}
   if(p==='/api/spin'&&req.method==='POST'){const {a:active,total}=activeWeighted();if(active.length<2||total<=0)return json(res,400,{error:'Нужно минимум 2 танка с донатами'});const target=weightedPick();previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();target.alive=false;state.lastEliminatedId=target.id;state.history.push({round:state.round,name:target.name,id:target.id,time:Date.now()});await saveState();broadcast();return json(res,200,{targetId:target.id,targetName:target.name,targetChance:chances()[target.id],weights:chances(),state:publicState()})}
   if(p==='/api/undo'&&req.method==='POST'){const prev=previousStates.pop();if(!prev)return json(res,400,{error:'Нечего отменять'});state=prev;await saveState();broadcast();return json(res,200,{state:publicState()})}
-  if(p==='/api/new-round'&&req.method==='POST'){previousStates.push(publicState());state.round++;state.lastEliminatedId=null;state.history=[];state.tanks.forEach(t=>t.alive=true);await saveState();broadcast();return json(res,200,{state:publicState()})}
+  if(p==='/api/new-round'&&req.method==='POST'){previousStates.push(publicState());state.round++;state.lastEliminatedId=null;state.history=[];state.tanks.forEach(t=>t.alive=true);state.timer={...defaultTimer(),...(state.timer||{}),endsAt:null,running:false};await saveState();broadcast();return json(res,200,{state:publicState()})}
   if(p==='/api/reset'&&req.method==='POST'){previousStates=[];state=initial();await saveState();broadcast();return json(res,200,publicState())}
   res.writeHead(404);res.end('Not found');
  } catch(e){ console.error(e); json(res,500,{error:e.message||'Server error'}); }
