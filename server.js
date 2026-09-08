@@ -26,7 +26,7 @@ const tanks = [
 const COMPLETED_SEED_IDS = new Set([33,34,35,36,37,38,39,40,41,42,43]);
 const completedSeed = tanks.filter(t=>COMPLETED_SEED_IDS.has(t.id)).map(t=>({...t,marked3:true,alive:false}));
 const defaultTimer = () => ({durationSec:3600, endsAt:null, running:false});
-const initial = () => ({version:10,round:1,tanks:JSON.parse(JSON.stringify(tanks)).map(t=>({...t,marked3:COMPLETED_SEED_IDS.has(t.id),alive:!COMPLETED_SEED_IDS.has(t.id)})),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),auctionPlan:null,updatedAt:Date.now()});
+const initial = () => ({version:10,round:1,tanks:JSON.parse(JSON.stringify(tanks)).map(t=>({...t,marked3:COMPLETED_SEED_IDS.has(t.id),alive:!COMPLETED_SEED_IDS.has(t.id)})),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
 let state = initial();
 let previousStates = [];
 const sessions = new Map();
@@ -89,37 +89,10 @@ function isAdmin(req){ const id=cookieSession(req); return !!(id && sessions.has
 function json(res,status,obj){ const b=JSON.stringify(obj); res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(b); }
 function readBody(req){ return new Promise((resolve,reject)=>{let b='';req.on('data',c=>{b+=c;if(b.length>2e6)reject(new Error('Body too large'))});req.on('end',()=>{try{resolve(b?JSON.parse(b):{})}catch(e){reject(e)}});req.on('error',reject)}); }
 function serveFile(res,file){ fs.readFile(path.join(ROOT,file),(e,b)=>{if(e)return res.writeHead(404).end('Not found'); const ext=path.extname(file).toLowerCase(); const types={'.html':'text/html; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8'}; const type=types[ext]||'application/octet-stream';res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});res.end(b);}); }
-function activeWeighted(){
- const a=state.tanks
-  .filter(t=>t.alive&&t.marked3!==true&&Number(t.amount)>0)
-  .map(t=>({...t,amount:Number(t.amount)||0,risk:Math.max(0,Number(t.amount)||0)}));
- const total=a.reduce((sum,t)=>sum+t.risk,0);
- return {a,total};
-}
-// Secure weighted random pick: probability is exactly proportional to the tank's support.
-function randomWeightedPick(items){
- const total=items.reduce((sum,t)=>sum+Math.max(0,Number(t.amount)||0),0);
- if(!items.length||total<=0)return null;
- const roll=crypto.randomInt(0,Math.max(1,Math.ceil(total)));
- let cursor=0;
- for(const t of items){
-   cursor+=Math.max(0,Number(t.amount)||0);
-   if(roll<cursor)return t;
- }
- return items[items.length-1];
-}
-function randomShuffle(items){
- const a=[...items];
- for(let i=a.length-1;i>0;i--){
-   const j=crypto.randomInt(0,i+1);
-   [a[i],a[j]]=[a[j],a[i]];
- }
- return a;
-}
-function chances(){
- const {a,total}=activeWeighted();
- return Object.fromEntries(a.map(t=>[t.id,total>0?(t.risk/total)*100:0]));
-}
+function activeWeighted(){ const a=state.tanks.filter(t=>t.alive&&t.marked3!==true&&Number(t.amount)>0).map(t=>({...t,amount:Number(t.amount)||0,weight:1/(Number(t.amount)||1)})); const total=a.reduce((s,t)=>s+t.weight,0); return {a,total}; }
+// Server-side weighted randomness for ELIMINATION: smaller support = larger sector = higher chance to be eliminated.
+function randomPick(){ const {a,total}=activeWeighted(); if(!a.length||total<=0)return null; const roll=crypto.randomInt(0,1_000_000_000)/1_000_000_000*total; let cursor=0; for(const t of a){cursor+=t.weight;if(roll<cursor)return t;} return a[a.length-1]; }
+function chances(){ const {a,total}=activeWeighted(); return Object.fromEntries(a.map(t=>[t.id,total>0?(t.weight/total)*100:0])); }
 async function handle(req,res){
  const u=new URL(req.url,'http://localhost'); const p=u.pathname;
  try {
@@ -169,57 +142,11 @@ async function handle(req,res){
   if(p==='/api/spin'&&req.method==='POST'){
     const body=await readBody(req);
     const durationSec=Math.min(120,Math.max(3,Number(body.durationSec)||20));
-    let active=state.tanks.filter(t=>t.alive!==false&&t.marked3!==true&&Number(t.amount)>0)
-      .map(t=>({id:t.id,name:t.name,amount:Number(t.amount)||0}));
-    if(active.length<2)return json(res,400,{error:'Нужно минимум 2 танка с поддержкой'});
-
-    // On the first spin, choose the eventual winner once, weighted by support.
-    // Then create a random elimination order for all other tanks. The order is
-    // stored in Supabase, so the animation can never change the actual result.
-    if(!state.auctionPlan || !state.auctionPlan.winnerId || !Array.isArray(state.auctionPlan.order)){
-      const winner=randomWeightedPick(active);
-      if(!winner)return json(res,400,{error:'Не удалось выбрать победителя'});
-      const losers=active.filter(t=>t.id!==winner.id);
-      state.auctionPlan={
-        lockedAt:Date.now(),
-        winnerId:winner.id,
-        participants:active.map(t=>({id:t.id,name:t.name,amount:t.amount})),
-        order:randomShuffle(losers).map(t=>t.id)
-      };
-      await saveState();
-      broadcast();
-    }
-
-    const plan=state.auctionPlan;
-    const participantMap=new Map((plan.participants||[]).map(t=>[Number(t.id),t]));
-    // Never allow a tank that was not in the locked starting field to enter later.
-    const currentOrder=(plan.order||[]).filter(id=>{
-      const t=state.tanks.find(x=>Number(x.id)===Number(id));
-      return t && t.alive!==false && t.marked3!==true;
-    });
-    const winner=state.tanks.find(t=>Number(t.id)===Number(plan.winnerId));
-    let targetId=currentOrder[0];
-    // If the winner is the only survivor, there is no further elimination.
-    if(!targetId || (winner && currentOrder.length===0)){
-      return json(res,400,{error:'🏆 Победитель уже определён: '+(winner?.name||'неизвестно')});
-    }
-    const target=state.tanks.find(t=>Number(t.id)===Number(targetId));
-    if(!target)return json(res,400,{error:'Танк для выбывания не найден'});
-
-    // Consume this elimination from the persisted plan only after the response
-    // is prepared; /api/eliminate will mark the tank dead.
-    await saveState();
-    const lockedTotal=(plan.participants||[]).reduce((sum,t)=>sum+Math.max(0,Number(t.amount)||0),0);
-    return json(res,200,{
-      ok:true,
-      result:{id:target.id,name:target.name,amount:Number(target.amount)||0},
-      durationSec,
-      winner:{id:winner?.id,name:winner?.name,amount:Number(winner?.amount)||0},
-      participants:(plan.participants||[]).map(t=>({
-        id:t.id,name:t.name,amount:t.amount,
-        share:lockedTotal?(Number(t.amount)||0)/lockedTotal*100:0
-      }))
-    });
+    const picked=randomPick();
+    if(!picked)return json(res,400,{error:'Нет активных танков'});
+    const {a,total}=activeWeighted();
+    const sumInverse=a.reduce((s,x)=>s+(1/(Number(x.amount)||1)),0);
+    return json(res,200,{ok:true,result:{id:picked.id,name:picked.name,amount:picked.amount},durationSec,participants:a.map(t=>({id:t.id,name:t.name,amount:t.amount,share:sumInverse?(1/(Number(t.amount)||1))/sumInverse*100:0}))});
   }
   if(p==='/api/eliminate'&&req.method==='POST'){
     const body=await readBody(req); const id=Number(body.id); const t=state.tanks.find(x=>x.id===id);
@@ -228,14 +155,14 @@ async function handle(req,res){
     const alive=state.tanks.filter(x=>x.alive!==false && x.marked3!==true && Number(x.amount)>0);
     if(alive.length<=1)return json(res,400,{error:'Нельзя выбить последний танк'});
     previousStates.push(publicState()); if(previousStates.length>20)previousStates.shift();
-    t.alive=false; if(state.auctionPlan && Array.isArray(state.auctionPlan.order)){ state.auctionPlan.order=state.auctionPlan.order.filter(x=>Number(x)!==id); } state.lastEliminatedId=id; state.history=Array.isArray(state.history)?state.history:[];
+    t.alive=false; state.lastEliminatedId=id; state.history=Array.isArray(state.history)?state.history:[];
     state.history.unshift({id:crypto.randomBytes(8).toString('hex'),tankId:id,tankName:t.name,amount:Number(t.amount)||0,at:Date.now(),round:state.round||1});
     state.history=state.history.slice(0,64);
     await saveState(); broadcast(); return json(res,200,{ok:true,state:publicState(),remaining:state.tanks.filter(x=>x.alive!==false&&x.marked3!==true&&Number(x.amount)>0).length});
   }
   if(p==='/api/timer'&&req.method==='POST'){const body=await readBody(req);const action=String(body.action||'');previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();const cur={...defaultTimer(),...(state.timer||{})};if(action==='set'){const minutes=Math.min(10080,Math.max(1,Number(body.minutes)||60));cur.durationSec=Math.round(minutes*60);cur.endsAt=null;cur.running=false}else if(action==='start'){cur.endsAt=Date.now()+Math.max(60,Number(cur.durationSec)||3600)*1000;cur.running=true}else if(action==='pause'){if(cur.running&&cur.endsAt)cur.durationSec=Math.max(0,Math.ceil((Number(cur.endsAt)-Date.now())/1000));cur.endsAt=null;cur.running=false}else if(action==='reset'){cur.endsAt=null;cur.running=false}else return json(res,400,{error:'Неизвестное действие таймера'});state.timer=cur;await saveState();broadcast();return json(res,200,{timer:cur,state:publicState()})}
   if(p==='/api/undo'&&req.method==='POST'){const prev=previousStates.pop();if(!prev)return json(res,400,{error:'Нечего отменять'});state=prev;await saveState();broadcast();return json(res,200,{state:publicState()})}
-  if(p==='/api/new-round'&&req.method==='POST'){previousStates.push(publicState());state.round++;state.lastEliminatedId=null;state.history=[];state.auctionPlan=null;state.tanks.forEach(t=>{if(t.marked3!==true)t.alive=true;});state.timer={...defaultTimer(),...(state.timer||{}),endsAt:null,running:false};await saveState();broadcast();return json(res,200,{state:publicState()})}
+  if(p==='/api/new-round'&&req.method==='POST'){previousStates.push(publicState());state.round++;state.lastEliminatedId=null;state.history=[];state.tanks.forEach(t=>{if(t.marked3!==true)t.alive=true;});state.timer={...defaultTimer(),...(state.timer||{}),endsAt:null,running:false};await saveState();broadcast();return json(res,200,{state:publicState()})}
   if(p==='/api/reset'&&req.method==='POST'){previousStates=[];state=initial();await saveState();broadcast();return json(res,200,publicState())}
   res.writeHead(404);res.end('Not found');
  } catch(e){ console.error(e); json(res,500,{error:e.message||'Server error'}); }
