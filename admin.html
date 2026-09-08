@@ -21,13 +21,7 @@ async function newRound(){if(!confirm('Начать новый раунд? Су�
 async function resetAll(){if(!confirm('Сбросить суммы, статусы и раунд?'))return;try{S=await api('/api/reset',{method:'POST'});render();toast('Аукцион сброшен')}catch(e){toast('Ошибка: '+e.message)}}
 async function logout(){try{await api('/api/logout',{method:'POST'});location.href='/admin-login.html'}catch(e){toast(e.message)}}
 let wheelAngle=0,spinning=false,audioCtx=null,lastTickSector=-1;
-function wheelAudio(type='tick'){
- try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==='suspended')audioCtx.resume();
- const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);
- const now=audioCtx.currentTime; o.frequency.value=type==='hit'?110:type==='finish'?70:220+Math.random()*80; o.type=type==='tick'?'square':'sawtooth';
- g.gain.setValueAtTime(type==='tick'?.045:.09,now);g.gain.exponentialRampToValueAtTime(.001,now+(type==='tick'?.045:.28));o.start(now);o.stop(now+(type==='tick'?.045:.28));
- }catch(e){}
-}
+function wheelAudio(type='tick'){ return; }
 function drawWheel(items, angle=wheelAngle){
  const c=document.getElementById('wheel'); if(!c)return;
  const ctx=c.getContext('2d'),W=c.width,H=c.height,cx=W/2,cy=H/2,r=485;
@@ -84,7 +78,7 @@ async function spin(){
   const invTotal=items.reduce((sum,t)=>sum+(1/(Number(t.amount)||1)),0);
   let cursor=-Math.PI/2,targetPoint=0,targetDa=0;
   for(const t of items){const a=Math.max(0,Number(t.amount)||0),da=2*Math.PI*((1/a)/invTotal);if(t.id===target.id){targetDa=da;const margin=Math.min(.20,da/(2*Math.PI)*.42);targetPoint=cursor+da*(margin+Math.random()*(1-margin*2));break;}cursor+=da;}
-  const startAngle=wheelAngle,turns=8,end=-Math.PI/2-targetPoint+turns*2*Math.PI;
+  const startAngle=wheelAngle,turns=7.5,targetBase=-Math.PI/2-targetPoint; let end=targetBase+Math.ceil((startAngle+turns*2*Math.PI-targetBase)/(2*Math.PI))*2*Math.PI; if(end<=startAngle+2*Math.PI) end+=2*Math.PI;
   const t0=performance.now(),dur=sec*1000;let lastTick=0;
   function frame(now){
     const p=Math.min(1,(now-t0)/dur),e=1-Math.pow(1-p,5),a=startAngle+(end-startAngle)*e;wheelAngle=a;drawWheel(items);
@@ -95,8 +89,7 @@ async function spin(){
     if(p<1)requestAnimationFrame(frame);else finish();
   }
   async function finish(){
-    wheelAngle=end;drawWheel(items);wheelAudio('hit');
-    setTimeout(()=>wheelAudio('finish'),180);
+    wheelAngle=end;drawWheel(items);
     const targetAmount=Math.max(0,Number(target.amount)||0),share=invTotal&&targetAmount?(1/targetAmount)/invTotal*100:0;
     document.getElementById('spinResult').textContent='💀 '+target.name+' — ВЫБЫВАЕТ!';
     document.getElementById('spinResultMeta').textContent=`Поддержка: ${money(target.amount)} · шанс выбыть: ${share.toFixed(1)}%`;
