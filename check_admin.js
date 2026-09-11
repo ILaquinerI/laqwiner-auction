@@ -59,8 +59,13 @@ function getWheelItems(){
  const active=(S?.tanks||[]).filter(t=>t.alive!==false&&Number(t.amount)>0);
  const key=active.map(t=>`${t.id}:${Number(t.amount)||0}`).sort().join('|');
  if(key!==wheelItemsKey || !wheelItemsCache.length){
-  wheelItemsCache=shuffleWheelItems(active);
-  wheelItemsKey=key;
+   let restored=null;
+   try{restored=JSON.parse(sessionStorage.getItem('laqWheelOrder')||'null');}catch(_){}
+   const byId=new Map(active.map(t=>[String(t.id),t]));
+   const restoredItems=Array.isArray(restored)&&restored.key===key?restored.ids.map(id=>byId.get(String(id))).filter(Boolean):[];
+   wheelItemsCache=restoredItems.length===active.length?restoredItems:shuffleWheelItems(active);
+   wheelItemsKey=key;
+   try{sessionStorage.setItem('laqWheelOrder',JSON.stringify({key,ids:wheelItemsCache.map(t=>t.id)}));}catch(_){}
  }
  const activeIds=new Set(active.map(t=>t.id));
  wheelItemsCache=wheelItemsCache.filter(t=>activeIds.has(t.id));
@@ -80,18 +85,25 @@ function renderWheel(){
 
 function showSpinOverlay({final=false,name='',meta='',image=''}){
  const o=document.getElementById('showOverlay'),c=document.getElementById('showOverlayCard');
- if(!o)return;
- c.classList.toggle('final',final);o.classList.toggle('final',final);
- document.getElementById('showKicker').textContent=final?'🏆🏆🏆 ПОБЕДИТЕЛЬ АУКЦИОНА':'💀 ТАНК ВЫБЫВАЕТ';
- document.getElementById('showTankName').textContent=name;
- document.getElementById('showMeta').textContent=final?'ПОСЛЕДНИЙ ОСТАВШИЙСЯ ТАНК':' '+meta;
+ if(!o||!c)return;
+ c.classList.toggle('final',!!final);o.classList.toggle('final',!!final);
+ const kicker=document.getElementById('showKicker'),nameEl=document.getElementById('showTankName'),metaEl=document.getElementById('showMeta');
+ if(kicker)kicker.textContent=final?'🏆🏆🏆 ПОБЕДИТЕЛЬ АУКЦИОНА':'💀 ТАНК ВЫБЫВАЕТ';
+ if(nameEl)nameEl.textContent=name||'—';
+ if(metaEl)metaEl.textContent=final?'ПОСЛЕДНИЙ ОСТАВШИЙСЯ ТАНК':meta;
  const im=document.getElementById('showTankImage');
- if(im){im.src=image||'';im.style.display=image?'block':'none';im.onerror=()=>{im.style.display='none'}}
+ if(im){im.onerror=null;if(image){im.src=image;im.style.display='block';}else{im.removeAttribute('src');im.style.display='none';}}
  const close=document.getElementById('showClose');if(close)close.style.display=final?'inline-block':'none';
- const badge=document.getElementById('showFinalBadge');if(badge)badge.textContent=final?'🏆 3 ОТМЕТКИ ВЗЯТЫ':'🏆 3 ОТМЕТКИ ВЗЯТЫ';
- o.classList.remove('show');void o.offsetWidth;o.classList.add('show');return o;
+ const badge=document.getElementById('showFinalBadge');if(badge){badge.textContent='🏆 3 ОТМЕТКИ ВЗЯТЫ';badge.style.display=final?'block':'none';}
+ const resultBox=document.querySelector('.wheelControls .result');if(resultBox)resultBox.style.display='none';
+ o.classList.remove('show');void o.offsetWidth;o.classList.add('show');
+ return o;
 }
-function hideSpinOverlay(){const o=document.getElementById('showOverlay');if(o)o.classList.remove('show','final')}
+function hideSpinOverlay(){
+ const o=document.getElementById('showOverlay');if(o){o.classList.remove('show','final');o.style.display='none';}
+ const resultBox=document.querySelector('.wheelControls .result');if(resultBox)resultBox.style.display='';
+}
+function keepSpinOverlay(){const o=document.getElementById('showOverlay');if(o){o.style.display='grid';o.classList.add('show');}}
 
 async function spin(){
  if(spinning)return;
@@ -142,15 +154,45 @@ async function spin(){
   }
   async function finish(){
    wheelAngle=end;drawWheel(itemsForSpin);
-   box.classList.remove('cinematic');void box.offsetWidth;box.classList.add('cinematic','eliminationFlash'); setTimeout(()=>box.classList.remove('eliminationFlash'),900);
+   box.classList.remove('cinematic');void box.offsetWidth;box.classList.add('cinematic','eliminationFlash');
+   setTimeout(()=>box.classList.remove('eliminationFlash'),900);
    const targetAmount=Math.max(0,Number(target.amount)||0),share=invTotal&&targetAmount?(1/targetAmount)/invTotal*100:0;
+   // Only one result surface: the large overlay.
+   showSpinOverlay({name:target.name,meta:`${money(target.amount)} · шанс выбыть ${share.toFixed(1)}%`});
    document.getElementById('spinResult').textContent='💀 '+target.name+' — ВЫБЫВАЕТ!';
    document.getElementById('spinResultMeta').textContent=`Поддержка: ${money(target.amount)} · шанс выбыть: ${share.toFixed(1)}%`;
-   document.querySelector('.wheelControls .result')?.classList.add('overlayResultHidden');showSpinOverlay({name:target.name,meta:`${money(target.amount)} · шанс выбыть ${share.toFixed(1)}%`});
    await new Promise(r=>setTimeout(r,2200));
-   try{const e=await api('/api/eliminate',{method:'POST',body:JSON.stringify({id:target.id})});if(!e.state||!Array.isArray(e.state.tanks))throw new Error('Сервер не вернул обновлённое состояние');S=e.state;wheelItemsCache=[];wheelItemsKey='';document.getElementById('remainingMeta').textContent=`Осталось танков с поддержкой: ${e.remaining}`;render();if(e.remaining===1){const winner=(S.tanks||[]).find(t=>t.alive!==false&&Number(t.amount)>0);if(winner){showSpinOverlay({final:true,name:winner.name,meta:'Последний оставшийся танк',image:winner.image||winner.imageUrl||winner.img||''});document.getElementById('spinResult').textContent='🏆 '+winner.name+' — ПОБЕДИТЕЛЬ!';document.getElementById('spinResultMeta').textContent='3 ОТМЕТКИ ВЗЯТЫ';}}else{hideSpinOverlay();document.querySelector('.wheelControls .result')?.classList.remove('overlayResultHidden');}toast(e.remaining===1?'🏆 ПОБЕДИТЕЛЬ АУКЦИОНА!':'💀 '+target.name+' выбыл');}
-   catch(err){hideSpinOverlay();document.querySelector('.wheelControls .result')?.classList.remove('overlayResultHidden');toast('Ошибка выбывания: '+err.message);render();}
-   spinning=false;setTimeout(()=>box.classList.remove('cinematic'),500);renderWheel();
+   try{
+     const e=await api('/api/eliminate',{method:'POST',body:JSON.stringify({id:target.id})});
+     if(!e||!e.state||!Array.isArray(e.state.tanks))throw new Error('Сервер не вернул обновлённое состояние');
+     S=e.state;
+     wheelItemsCache=[];wheelItemsKey='';
+     try{sessionStorage.removeItem('laqWheelOrder')}catch(_){}
+     const remaining=Number(e.remaining)||0;
+     document.getElementById('remainingMeta').textContent=`Осталось танков с поддержкой: ${remaining}`;
+     render();
+     if(remaining===1){
+       const winner=(S.tanks||[]).find(t=>t.alive!==false&&t.marked3!==true&&Number(t.amount)>0);
+       if(winner){
+         showSpinOverlay({final:true,name:winner.name,meta:'ПОСЛЕДНИЙ ОСТАВШИЙСЯ ТАНК',image:winner.image||winner.imageUrl||winner.img||''});
+         document.getElementById('spinResult').textContent='🏆 '+winner.name+' — ПОБЕДИТЕЛЬ!';
+         document.getElementById('spinResultMeta').textContent='3 ОТМЕТКИ ВЗЯТЫ';
+         keepSpinOverlay();
+       }
+     }else{
+       hideSpinOverlay();
+       document.querySelector('.wheelControls .result')?.classList.remove('overlayResultHidden');
+     }
+     toast(remaining===1?'🏆 ПОБЕДИТЕЛЬ АУКЦИОНА!':'💀 '+target.name+' выбыл');
+   }catch(err){
+     hideSpinOverlay();
+     document.querySelector('.wheelControls .result')?.classList.remove('overlayResultHidden');
+     toast('Ошибка выбывания: '+err.message);
+     render();
+   }
+   spinning=false;
+   setTimeout(()=>box.classList.remove('cinematic'),500);
+   renderWheel();
   }
   requestAnimationFrame(frame);
  }catch(e){spinning=false;box.classList.remove('cinematic');toast('Ошибка: '+e.message);render();}
