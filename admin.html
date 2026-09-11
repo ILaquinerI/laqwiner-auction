@@ -62,7 +62,7 @@ function renderWheel(){
  const totalSupport=items.reduce((s,t)=>s+(Number(t.amount)||0),0);
  drawWheel(items);
  const colors=['#e74c3c','#f39c12','#2ecc71','#3498db','#9b59b6','#e84393','#16a085','#d35400','#8e44ad','#1abc9c','#c0392b','#2980b9'];
- const wheelSorted=[...items].sort((x,y)=>{const ax=Math.max(0,Number(x.amount)||0),ay=Math.max(0,Number(y.amount)||0);const sx=totalSupport&&ax?ax/totalSupport*100:0,sy=totalSupport&&ay?ay/totalSupport*100:0;return sy-sx||String(x.name).localeCompare(String(y.name),'ru')});document.getElementById('wheelRows').innerHTML=wheelSorted.map((t,i)=>{const a=Math.max(0,Number(t.amount)||0),share=totalSupport&&a?a/totalSupport*100:0;return `<div class="wheelRow"><div class="wheelNameOnly"><span class="wheelDot" style="background:${colors[i%colors.length]};box-shadow:0 0 10px ${colors[i%colors.length]}"></span><div><b>${esc(t.name)}</b><div class="muted">${money(a)} · <span class="wheelChance">шанс на победу ${share.toFixed(1)}%</span></div></div></div></div>`}).join('')||'<div class="hint" style="padding:14px">Добавь поддержку хотя бы двум танкам.</div>';
+ document.getElementById('wheelRows').innerHTML=items.map((t,i)=>{const a=Math.max(0,Number(t.amount)||0),share=totalSupport&&a?a/totalSupport*100:0;return `<div class="wheelRow"><div class="wheelNameOnly"><span class="wheelDot" style="background:${colors[i%colors.length]};box-shadow:0 0 10px ${colors[i%colors.length]}"></span><div><b>${esc(t.name)}</b><div class="muted">${money(a)} · <span class="wheelChance">шанс на победу ${share.toFixed(1)}%</span></div></div></div></div>`}).join('')||'<div class="hint" style="padding:14px">Добавь поддержку хотя бы двум танкам.</div>';
 }
 async function spin(){
  if(spinning)return;
