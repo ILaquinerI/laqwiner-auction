@@ -23,7 +23,7 @@ const tanks = [
 ['BZ-75','Ch48_BZ_75.png','Китай','ТТ'],['116-F3','Ch52_WZ_122_6_F3.png','Китай','ТТ'],['Type 5 Heavy','J20_Type_2605.png','Япония','ТТ'],['CS-63','Pl21_CS_63.png','Польша','СТ'],
 ['Объект 279 ранний','R157_Object_279R.png','СССР','ТТ'],['T95/FV4201 Chieftain','GB98_T95_FV4201_Chieftain.png','Великобритания','ТТ'],['T57 Heavy Tank','A67_T57_58.png','США','ТТ'],['Leopard 1','G89_Leopard1.png','Германия','СТ'],['ИС-7','R45_IS-7.png','СССР','ТТ'],['Grille 15','G121_Grille_15_L63.png','Германия','ПТ-САУ'],['120 AC Gendarme','F129_Schneider_120_AC_Gendarme.png','Франция','ПТ-САУ'],['FV215b','GB13_FV215b.png','Великобритания','ТТ'],['BZ-74-1','Ch56_BZ_74_1.png','Китай','ТТ'],['Orso','It33_Orso.png','Италия','ТТ'],['60TP Lewandowskiego','Pl15_60TP_Lewandowskiego.png','Польша','ТТ'],['Type 71','J40_Type_71.png','Япония','ТТ'],['Panhard EBR 105','F108_Panhard_EBR_105.png','Франция','ЛТ']
 ].map((x,i)=>({id:i+1,name:x[0],image:x[1]?CDN+x[1]:'assets/tank-placeholder.svg',nation:x[2],class:x[3],amount:0,weight:50,alive:true}));
-const COMPLETED_SEED_IDS = new Set([33,34,35,36,37,38,39,40,41,42,43,44]);
+const COMPLETED_SEED_IDS = new Set([33,34,35,36,37,38,39,40,41,42,43,44,45]);
 const completedSeed = tanks.filter(t=>COMPLETED_SEED_IDS.has(t.id)).map(t=>({...t,marked3:true,alive:false}));
 const defaultTimer = () => ({durationSec:3600, endsAt:null, running:false});
 const initial = () => ({version:10,round:1,tanks:JSON.parse(JSON.stringify(tanks)).map(t=>({...t,marked3:COMPLETED_SEED_IDS.has(t.id),alive:!COMPLETED_SEED_IDS.has(t.id)})),history:[],recentDonations:[],lastEliminatedId:null,timer:defaultTimer(),updatedAt:Date.now()});
