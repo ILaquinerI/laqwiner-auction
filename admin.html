@@ -136,6 +136,22 @@ function hideSpinOverlay(){
 }
 function keepSpinOverlay(){const o=ensureSpinOverlay();o.style.setProperty('display','grid','important');o.classList.add('show','final');}
 
+function showWinnerOverlay(winner){
+ let o=document.getElementById('winnerOverlay');
+ if(!o){
+  o=document.createElement('div');o.id='winnerOverlay';
+  o.style.cssText='position:fixed;inset:0;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;z-index:2147483647;background:rgba(2,5,9,.9);backdrop-filter:blur(8px);padding:24px;box-sizing:border-box;';
+  o.innerHTML='<div id="winnerCard" style="width:min(92vw,700px);max-height:90vh;overflow:auto;box-sizing:border-box;text-align:center;padding:42px 34px;border:2px solid #e3c36d;border-radius:24px;background:linear-gradient(145deg,#30250b,#0a0f16);box-shadow:0 0 120px rgba(227,195,109,.35),0 25px 70px #000"><div style="font-size:30px;font-weight:1000;color:#f5d47b;letter-spacing:.03em">🏆 ПОБЕДИТЕЛЬ АУКЦИОНА НА 3 ОТМЕТКИ</div><img id="winnerImage" style="display:block;width:min(500px,80vw);height:230px;object-fit:contain;margin:24px auto 10px;filter:drop-shadow(0 15px 25px rgba(0,0,0,.8))"><div id="winnerName" style="font-size:clamp(30px,5vw,58px);font-weight:1000;color:#fff;text-transform:uppercase;margin-top:8px"></div><div style="display:inline-block;margin-top:18px;padding:11px 20px;border:1px solid #e3c36d;border-radius:999px;color:#f5d47b;font-size:18px;font-weight:1000">🏆 3 ОТМЕТКИ ВЗЯТЫ</div><br><button onclick="hideWinnerOverlay()" style="margin-top:24px;padding:13px 28px;border:0;border-radius:12px;font-weight:1000;cursor:pointer">ЗАКРЫТЬ</button></div>';
+  document.body.appendChild(o);
+ }
+ const img=o.querySelector('#winnerImage'),name=o.querySelector('#winnerName');
+ name.textContent=winner.name||'—';
+ const src=winner.image||winner.imageUrl||winner.img||'';
+ if(src){img.src=src;img.style.display='block';}else{img.style.display='none';}
+ o.style.display='flex';
+}
+function hideWinnerOverlay(){const o=document.getElementById('winnerOverlay');if(o)o.style.display='none';}
+
 async function spin(){
  if(spinning)return;
  const active=(S.tanks||[]).filter(t=>t.alive!==false&&Number(t.amount)>0);
@@ -196,20 +212,21 @@ async function spin(){
      const e=await api('/api/eliminate',{method:'POST',body:JSON.stringify({id:target.id})});
      if(!e||!e.state||!Array.isArray(e.state.tanks))throw new Error('Сервер не вернул обновлённое состояние');
      S=e.state;
-     const remaining=(S.tanks||[]).filter(t=>t.alive!==false&&t.marked3!==true&&Number(t.amount)>0).length;
+     const serverRemaining=Number(e.remaining);
+     const remaining=Number.isFinite(serverRemaining)?serverRemaining:(S.tanks||[]).filter(t=>t.alive!==false&&t.marked3!==true&&Number(t.amount)>0).length;
      document.getElementById('remainingMeta').textContent=`Осталось танков с поддержкой: ${remaining}`;
      wheelItemsCache=[];wheelItemsKey='';
      try{sessionStorage.removeItem('laqWheelOrder')}catch(_){}
-     render();
      if(remaining===1){
        const winner=(S.tanks||[]).find(t=>t.alive!==false&&t.marked3!==true&&Number(t.amount)>0);
        if(!winner)throw new Error('Не удалось определить последнего танка');
-       // Финальный экран — единственный экран результата.
-       showSpinOverlay({final:true,name:winner.name,meta:'ПОБЕДИТЕЛЬ АУКЦИОНА НА 3 ОТМЕТКИ',image:winner.image||winner.imageUrl||winner.img||''});
+       render();
+       hideSpinOverlay();
+       showWinnerOverlay(winner);
        document.getElementById('spinResult').textContent='🏆 '+winner.name+' — ПОБЕДИТЕЛЬ АУКЦИОНА!';
        document.getElementById('spinResultMeta').textContent='🏆 ПОСЛЕДНИЙ ТАНК · 3 ОТМЕТКИ ВПЕРЕДИ';
-       keepSpinOverlay();
      }else{
+       render();
        hideSpinOverlay();
        document.querySelector('.wheelControls .result')?.classList.remove('overlayResultHidden');
      }
