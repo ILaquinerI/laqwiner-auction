@@ -99,28 +99,42 @@ function renderWheel(){
  document.getElementById('wheelRows').innerHTML=rows.map((t,i)=>{const a=Math.max(0,Number(t.amount)||0),share=totalSupport&&a?a/totalSupport*100:0;return `<div class="wheelRow"><div class="wheelNameOnly"><span class="wheelDot" style="background:${colors[i%colors.length]};box-shadow:0 0 10px ${colors[i%colors.length]}"></span><div><b>${esc(t.name)}</b><div class="muted">${money(a)} · <span class="wheelChance">шанс на победу ${share.toFixed(1)}%</span></div></div></div></div>`}).join('')||'<div class="hint" style="padding:14px">Добавь поддержку хотя бы двум танкам.</div>';
 }
 
+function ensureSpinOverlay(){
+ let o=document.getElementById('showOverlay');
+ if(!o){
+  o=document.createElement('div');o.id='showOverlay';o.className='showOverlay';
+  o.innerHTML='<div class="showOverlayCard" id="showOverlayCard"><div class="showKicker" id="showKicker"></div><div class="showTankImageWrap"><img id="showTankImage" class="showTankImage" alt=""></div><div class="showTankName" id="showTankName">—</div><div class="showMeta" id="showMeta">—</div><div class="showFinalBadge" id="showFinalBadge">🏆 3 ОТМЕТКИ ВЗЯТЫ</div><button id="showClose" onclick="hideSpinOverlay()" style="display:none;margin-top:18px">ЗАКРЫТЬ</button></div>';
+ }
+ if(o.parentElement!==document.body)document.body.appendChild(o);
+ return o;
+}
 function showSpinOverlay({final=false,name='',meta='',image=''}){
- const o=document.getElementById('showOverlay'),c=document.getElementById('showOverlayCard');
- if(o && o.parentElement!==document.body) document.body.appendChild(o);
- if(!o||!c)return;
+ const o=ensureSpinOverlay(),c=document.getElementById('showOverlayCard');
  c.classList.toggle('final',!!final);o.classList.toggle('final',!!final);
  const kicker=document.getElementById('showKicker'),nameEl=document.getElementById('showTankName'),metaEl=document.getElementById('showMeta');
- if(kicker)kicker.textContent=final?'🏆🏆🏆 ПОБЕДИТЕЛЬ АУКЦИОНА':'💀 ТАНК ВЫБЫВАЕТ';
+ if(kicker)kicker.textContent=final?'🏆 ПОБЕДИТЕЛЬ АУКЦИОНА НА 3 ОТМЕТКИ':'💀 ТАНК ВЫБЫВАЕТ';
  if(nameEl)nameEl.textContent=name||'—';
- if(metaEl)metaEl.textContent=final?'ПОСЛЕДНИЙ ОСТАВШИЙСЯ ТАНК':meta;
+ if(metaEl)metaEl.textContent=meta||'—';
  const im=document.getElementById('showTankImage');
  if(im){im.onerror=null;if(image){im.src=image;im.style.display='block';}else{im.removeAttribute('src');im.style.display='none';}}
  const close=document.getElementById('showClose');if(close)close.style.display=final?'inline-block':'none';
- const badge=document.getElementById('showFinalBadge');if(badge){badge.textContent='🏆 3 ОТМЕТКИ ВЗЯТЫ';badge.style.display=final?'block':'none';}
+ const badge=document.getElementById('showFinalBadge');if(badge)badge.style.display=final?'block':'none';
  const resultBox=document.querySelector('.wheelControls .result');if(resultBox)resultBox.style.display='none';
- o.classList.remove('show');void o.offsetWidth;o.style.display='grid';o.classList.add('show');
+ o.classList.remove('show');
+ o.style.setProperty('display','grid','important');
+ o.style.setProperty('position','fixed','important');
+ o.style.setProperty('inset','0','important');
+ o.style.setProperty('z-index','999999','important');
+ void o.offsetWidth;
+ o.classList.add('show');
  return o;
 }
 function hideSpinOverlay(){
- const o=document.getElementById('showOverlay');if(o){o.classList.remove('show','final');o.style.display='none';}
+ const o=document.getElementById('showOverlay');
+ if(o){o.classList.remove('show','final');o.style.setProperty('display','none','important');}
  const resultBox=document.querySelector('.wheelControls .result');if(resultBox)resultBox.style.display='';
 }
-function keepSpinOverlay(){const o=document.getElementById('showOverlay');if(o){o.style.display='grid';o.classList.add('show');}}
+function keepSpinOverlay(){const o=ensureSpinOverlay();o.style.setProperty('display','grid','important');o.classList.add('show','final');}
 
 async function spin(){
  if(spinning)return;
@@ -177,7 +191,7 @@ async function spin(){
    showSpinOverlay({name:target.name,meta:`${money(target.amount)} · шанс выбыть ${share.toFixed(1)}%`});
    document.getElementById('spinResult').textContent='💀 '+target.name+' — ВЫБЫВАЕТ!';
    document.getElementById('spinResultMeta').textContent=`Поддержка: ${money(target.amount)} · шанс выбыть: ${share.toFixed(1)}%`;
-   await new Promise(r=>setTimeout(r,2200));
+   await new Promise(r=>setTimeout(r,5000));
    try{
      const e=await api('/api/eliminate',{method:'POST',body:JSON.stringify({id:target.id})});
      if(!e||!e.state||!Array.isArray(e.state.tanks))throw new Error('Сервер не вернул обновлённое состояние');
@@ -215,6 +229,5 @@ async function spin(){
 }
 
 async function copyAuctionLink(){try{await navigator.clipboard.writeText(location.origin+'/');toast('🔗 Ссылка на аукцион скопирована')}catch(e){toast('Не удалось скопировать ссылку')}}
-document.addEventListener('DOMContentLoaded',()=>{const o=document.getElementById('showOverlay');if(o){document.body.appendChild(o);o.style.display='none';}});
 load();setInterval(load,2500);setInterval(renderTimer,500);
 </script></body></html>
