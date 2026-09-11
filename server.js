@@ -44,11 +44,12 @@ function normalizeTanks(list){
  const base=tanks.map(base=>{
    const t=byId.get(base.id)||{};
    const completed=COMPLETED_SEED_IDS.has(base.id);
+   const forceActive = base.name === 'Type 71';
    return {...base,...t,name:base.name,image:base.image,nation:base.nation,class:base.class,custom:false,
-     marked3:completed ? true : t.marked3===true,
+     marked3: forceActive ? false : (completed ? true : t.marked3===true),
      amount:completed ? 0 : (Number.isFinite(Number(t.amount))?Math.max(0,Number(t.amount)):0),
      weight:Number.isFinite(Number(t.weight))?Math.max(1,Math.min(100,Math.round(Number(t.weight)))):50,
-     alive:completed ? false : t.alive!==false};
+     alive: forceActive ? true : (completed ? false : t.alive!==false)};
  });
  const custom=incoming.filter(t=>!baseIds.has(Number(t.id)) && t && String(t.name||'').trim()).map(t=>({
    id:Number(t.id), name:String(t.name).trim().slice(0,80), image:String(t.image||'').trim().slice(0,1000), nation:String(t.nation||'').trim().slice(0,40), class:String(t.class||'').trim().slice(0,20), custom:true, marked3:t.marked3===true,
