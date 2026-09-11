@@ -170,8 +170,7 @@ async function spin(){
   }
   async function finish(){
    wheelAngle=end;drawWheel(itemsForSpin);
-   box.classList.remove('cinematic');void box.offsetWidth;box.classList.add('cinematic','eliminationFlash');
-   setTimeout(()=>box.classList.remove('eliminationFlash'),900);
+   box.classList.remove('cinematic','eliminationFlash');
    const targetAmount=Math.max(0,Number(target.amount)||0),share=invTotal&&targetAmount?(1/targetAmount)/invTotal*100:0;
    // Only one result surface: the large overlay.
    showSpinOverlay({name:target.name,meta:`${money(target.amount)} · шанс выбыть ${share.toFixed(1)}%`});
@@ -190,9 +189,9 @@ async function spin(){
      if(remaining===1){
        const winner=(S.tanks||[]).find(t=>t.alive!==false&&t.marked3!==true&&Number(t.amount)>0);
        if(winner){
-         showSpinOverlay({final:true,name:winner.name,meta:'ПОСЛЕДНИЙ ОСТАВШИЙСЯ ТАНК',image:winner.image||winner.imageUrl||winner.img||''});
-         document.getElementById('spinResult').textContent='🏆 '+winner.name+' — ПОБЕДИТЕЛЬ!';
-         document.getElementById('spinResultMeta').textContent='3 ОТМЕТКИ ВЗЯТЫ';
+         showSpinOverlay({final:true,name:winner.name,meta:'ПОБЕДИТЕЛЬ АУКЦИОНА НА 3 ОТМЕТКИ',image:winner.image||winner.imageUrl||winner.img||''});
+         document.getElementById('spinResult').textContent='🏆 '+winner.name+' — ПОБЕДИТЕЛЬ АУКЦИОНА!';
+         document.getElementById('spinResultMeta').textContent='🏆 3 ОТМЕТКИ ВЗЯТЫ';
          keepSpinOverlay();
        }
      }else{
