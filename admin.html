@@ -191,7 +191,7 @@ async function spin(){
    }
    cursor+=da;
   }
-  const startAngle=wheelAngle,turns=7.25,targetBase=-Math.PI/2-targetPoint;
+  const startAngle=wheelAngle,turns=Math.max(8, sec*1.0),targetBase=-Math.PI/2-targetPoint;
   let end=targetBase+Math.ceil((startAngle+turns*2*Math.PI-targetBase)/(2*Math.PI))*2*Math.PI;
   
   const t0=performance.now(),dur=sec*1000;
