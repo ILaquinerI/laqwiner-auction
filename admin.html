@@ -181,12 +181,21 @@ async function spin(){
   const target=d.result;
   const itemsForSpin=stableItems;
   const invTotal=itemsForSpin.reduce((sum,t)=>sum+(1/(Number(t.amount)||1)),0);
-  let cursor=-Math.PI/2,targetPoint=0;
-  for(const t of itemsForSpin){
-   const a=Math.max(0,Number(t.amount)||0),da=2*Math.PI*((1/a)/invTotal);
+  let cursor=-Math.PI/2,targetPoint=0,targetStart=0,targetDa=0,targetIndex=0;
+  for(let i=0;i<itemsForSpin.length;i++){
+   const t=itemsForSpin[i],a=Math.max(0,Number(t.amount)||0),da=2*Math.PI*((1/a)/invTotal);
    if(t.id===target.id){
-    const margin=Math.min(.20,da/(2*Math.PI)*.42);
-    targetPoint=cursor+da*(margin+Math.random()*(1-margin*2));
+    targetStart=cursor; targetDa=da; targetIndex=i;
+    // ВАЖНО: результат уже выбран сервером. Здесь меняется только визуальная точка остановки.
+    // Иногда стрелка подходит очень близко к границе двух секторов для эффекта "почти",
+    // но в самом конце всегда фиксируется внутри сектора уже выбранного танка.
+    const nearMiss=Math.random()<0.38;
+    if(nearMiss){
+      const side=Math.random()<0.5?0.12:0.88;
+      targetPoint=cursor+da*side;
+    }else{
+      targetPoint=cursor+da*(0.30+Math.random()*0.40);
+    }
     break;
    }
    cursor+=da;
@@ -196,8 +205,13 @@ async function spin(){
   
   const t0=performance.now(),dur=sec*1000;
   let lastSector=-1,nearShown=false;
+  const nearMissVisual=Math.abs((targetPoint-targetStart)/Math.max(targetDa,.000001)-0.5)>0.30;
   const ease=p=>{
-   return 1-Math.pow(1-p,4.2);
+   // Быстрый старт -> длительное быстрое вращение -> мягкое замедление.
+   // Никак не влияет на выбранный сервером target.
+   if(p<0.12) return 0.62*Math.pow(p/0.12,0.55);
+   const q=(p-0.12)/0.88;
+   return 0.62+0.38*(1-Math.pow(1-q,4.8));
   };
   function frame(now){
    const p=Math.min(1,(now-t0)/dur),e=ease(p),a=startAngle+(end-startAngle)*e;
@@ -205,7 +219,7 @@ async function spin(){
    const norm=(((-a)%(2*Math.PI))+2*Math.PI)%(2*Math.PI);let acc=0,idx=-1;
    for(let i=0;i<itemsForSpin.length;i++){acc+=2*Math.PI*((1/(Number(itemsForSpin[i].amount)||1))/invTotal);if(norm<acc){idx=i;break;}}
    if(idx!==lastSector){lastSector=idx;}
-   if(p>.80&&!nearShown){nearShown=true;document.getElementById('spinResult').textContent='⚠️ ПОЧТИ…';document.getElementById('spinResultMeta').textContent='Колесо замедляется…';}
+   if(p>.78&&!nearShown){nearShown=true;document.getElementById('spinResult').textContent=nearMissVisual?'⚠️ ПОЧТИ…':'⚠️ КОЛЕСО ЗАМЕДЛЯЕТСЯ…';document.getElementById('spinResultMeta').textContent=nearMissVisual?'Стрелка остановится прямо у границы сектора…':'Колесо замедляется…';}
    if(p<1)requestAnimationFrame(frame);else finish();
   }
   async function finish(){
