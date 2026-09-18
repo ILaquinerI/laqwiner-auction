@@ -82,7 +82,21 @@ async function loadState(){
   try { const rows=await sb('auction_state?id=eq.1&select=state'); if(rows?.[0]?.state?.tanks?.length) { state=rows[0].state; state.timer={...defaultTimer(),...(state.timer||{})}; state.tanks=normalizeTanks(state.tanks); const migrated=migrateCompletedSeeds(); ensureCompletedSeeds(); if(migrated) state.tanks=normalizeTanks(state.tanks); await saveState(); } else await saveState(); }
   catch(e){ console.error(e.message); }
 }
-async function saveState(){ state.updatedAt=Date.now(); await sb('auction_state',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({id:1,state,updated_at:new Date().toISOString()})}); }
+async function saveState(){
+  state.updatedAt=Date.now();
+  const payload=JSON.stringify({id:1,state,updated_at:new Date().toISOString()});
+  let lastErr=null;
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      await sb('auction_state',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:payload});
+      return true;
+    }catch(e){
+      lastErr=e;
+      if(attempt<2) await new Promise(r=>setTimeout(r,250*(attempt+1)));
+    }
+  }
+  throw lastErr || new Error('Не удалось сохранить состояние');
+}
 function publicState(){ return JSON.parse(JSON.stringify(state)); }
 function broadcast(){ const msg=JSON.stringify({type:'state',state:publicState()}); wss.clients.forEach(c=>{if(c.readyState===1)c.send(msg)}); }
 function cookieSession(req){ const c=(req.headers.cookie||'').split(';').map(x=>x.trim()); const s=c.find(x=>x.startsWith('laq_session=')); return s?s.split('=')[1]:null; }
