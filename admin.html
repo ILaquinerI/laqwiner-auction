@@ -18,29 +18,19 @@ async function save(id){
  const raw=String(el.value??'').trim();
  if(raw===''){toast('Введи сумму');el.focus();return;}
  const amount=Math.max(0,Math.round(Number(raw)||0));
- const oldS=S; savingIds.add(String(id)); el.disabled=true;
+ savingIds.add(String(id)); el.disabled=true;
  try{
-   let d=null,lastErr=null;
-   for(let attempt=0;attempt<3;attempt++){
-     try{
-       d=await api('/api/tank',{method:'POST',body:JSON.stringify({id,amount})});
-       if(d&&d.state) break;
-       throw Error('Сервер не вернул сохранённое состояние');
-     }catch(err){
-       lastErr=err;
-       if(attempt<2) await new Promise(r=>setTimeout(r,350*(attempt+1)));
-     }
-   }
-   if(!d||!d.state)throw lastErr||Error('Не удалось сохранить сумму');
+   const d=await api('/api/tank',{method:'POST',body:JSON.stringify({id,amount})});
+   if(!d||!d.state)throw Error('Сервер не подтвердил сохранение');
    S=d.state;
    const saved=(S.tanks||[]).find(t=>Number(t.id)===Number(id));
-   if(!saved||Number(saved.amount)!==amount)throw Error('Сервер не подтвердил сумму');
+   if(!saved||Number(saved.amount)!==amount)throw Error('Сервер вернул другое значение');
+   const row=document.getElementById('a'+id);
+   if(row){row.value=String(amount);row.disabled=false;}
    render();
    const after=document.getElementById('a'+id);if(after){after.value=String(amount);after.disabled=false;after.focus();after.select();}
    toast('Сумма сохранена: '+money(amount));
  }catch(e){
-   S=oldS;
-   render();
    const after=document.getElementById('a'+id);if(after){after.disabled=false;after.value=String(amount);after.focus();after.select();}
    toast('Ошибка сохранения: '+e.message);
  }finally{savingIds.delete(String(id));}
@@ -301,5 +291,19 @@ async function spin(){
 }
 
 async function copyAuctionLink(){try{await navigator.clipboard.writeText(location.origin+'/');toast('🔗 Ссылка на аукцион скопирована')}catch(e){toast('Не удалось скопировать ссылку')}}
-load();setInterval(load,2500);setInterval(renderTimer,500);
+load();
+let lastPollSignature='';
+setInterval(async()=>{
+  if(spinning||savingIds.size)return;
+  try{
+    const r=await fetch('/api/state',{cache:'no-store'}); if(!r.ok)return;
+    const d=await r.json(); if(!Array.isArray(d.tanks))return;
+    const sig=JSON.stringify(d.tanks.map(t=>[t.id,t.amount,t.alive,t.marked3]));
+    S=d;
+    const focused=document.activeElement;
+    const editing=focused&&focused.matches&&focused.matches('.amountBox input[type=number]');
+    if(!editing && sig!==lastPollSignature){lastPollSignature=sig;render();}
+  }catch(_){ }
+},2500);
+setInterval(renderTimer,500);
 </script></body></html>

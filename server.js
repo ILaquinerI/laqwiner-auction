@@ -88,11 +88,14 @@ async function saveState(){
   let lastErr=null;
   for(let attempt=0;attempt<3;attempt++){
     try{
-      await sb('auction_state',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:payload});
+      // Update the existing singleton row first. This avoids UPSERT/constraint races
+      // and makes admin amount saves deterministic on the first click.
+      const r=await fetch(SUPABASE_URL + '/rest/v1/auction_state?id=eq.1',{method:'PATCH',headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({state,updated_at:new Date().toISOString()})});
+      if(!r.ok) throw new Error('Supabase '+r.status+': '+await r.text());
       return true;
     }catch(e){
       lastErr=e;
-      if(attempt<2) await new Promise(r=>setTimeout(r,250*(attempt+1)));
+      if(attempt<2) await new Promise(r=>setTimeout(r,200*(attempt+1)));
     }
   }
   throw lastErr || new Error('Не удалось сохранить состояние');
@@ -178,7 +181,15 @@ async function handle(req,res){
   if(p==='/api/timer'&&req.method==='POST'){const body=await readBody(req);const action=String(body.action||'');previousStates.push(publicState());if(previousStates.length>20)previousStates.shift();const cur={...defaultTimer(),...(state.timer||{})};if(action==='set'){const minutes=Math.min(10080,Math.max(1,Number(body.minutes)||60));cur.durationSec=Math.round(minutes*60);cur.endsAt=null;cur.running=false}else if(action==='start'){cur.endsAt=Date.now()+Math.max(60,Number(cur.durationSec)||3600)*1000;cur.running=true}else if(action==='pause'){if(cur.running&&cur.endsAt)cur.durationSec=Math.max(0,Math.ceil((Number(cur.endsAt)-Date.now())/1000));cur.endsAt=null;cur.running=false}else if(action==='reset'){cur.endsAt=null;cur.running=false}else return json(res,400,{error:'Неизвестное действие таймера'});state.timer=cur;await saveState();broadcast();return json(res,200,{timer:cur,state:publicState()})}
   if(p==='/api/undo'&&req.method==='POST'){const prev=previousStates.pop();if(!prev)return json(res,400,{error:'Нечего отменять'});state=prev;await saveState();broadcast();return json(res,200,{state:publicState()})}
   if(p==='/api/new-round'&&req.method==='POST'){previousStates.push(publicState());state.round++;state.lastEliminatedId=null;state.history=[];state.tanks.forEach(t=>{if(t.marked3!==true)t.alive=true;});state.timer={...defaultTimer(),...(state.timer||{}),endsAt:null,running:false};await saveState();broadcast();return json(res,200,{state:publicState()})}
-  if(p==='/api/reset'&&req.method==='POST'){previousStates=[];state=initial();await saveState();broadcast();return json(res,200,publicState())}
+  if(p==='/api/reset'&&req.method==='POST'){
+    previousStates=[];
+    // Full reset clears support and eliminated status, but NEVER returns a tank
+    // that is already in the 3-marks/completed tab. Preserve all existing marked3 flags.
+    state.tanks=(state.tanks||[]).map(t=>({...t,amount:0,alive:t.marked3===true?false:true}));
+    state.history=[]; state.lastEliminatedId=null;
+    state.timer={...defaultTimer()};
+    await saveState(); broadcast(); return json(res,200,publicState())
+  }
   res.writeHead(404);res.end('Not found');
  } catch(e){ console.error(e); json(res,500,{error:e.message||'Server error'}); }
 }
