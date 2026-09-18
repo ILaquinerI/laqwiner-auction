@@ -208,16 +208,26 @@ async function spin(){
    const t=itemsForSpin[i],a=Math.max(0,Number(t.amount)||0),da=2*Math.PI*((1/a)/invTotal);
    if(t.id===target.id){
     targetStart=cursor; targetDa=da; targetIndex=i;
-    // ВАЖНО: результат уже выбран сервером. Здесь меняется только визуальная точка остановки.
-    // Иногда стрелка подходит очень близко к границе двух секторов для эффекта "почти",
-    // но в самом конце всегда фиксируется внутри сектора уже выбранного танка.
-    const nearMiss=Math.random()<0.38;
-    if(nearMiss){
-      const side=Math.random()<0.5?0.12:0.88;
-      targetPoint=cursor+da*side;
-    }else{
-      targetPoint=cursor+da*(0.30+Math.random()*0.40);
+    // Результат уже выбран сервером. Здесь меняется ТОЛЬКО визуальная
+    // точка остановки внутри сектора — вероятность выбора танка не меняется.
+    // Запоминаем предыдущую относительную точку, чтобы стрелка не
+    // останавливалась каждый раз примерно в одном месте сектора.
+    const key='laqWheelStopFraction';
+    const prev=Number(sessionStorage.getItem(key));
+    let fraction;
+    for(let tries=0;tries<20;tries++){
+      // Иногда ставим остановку почти на границу двух соседних
+      // секторов — это только визуальный эффект. Сервер уже выбрал target,
+      // поэтому шансы и результат рулетки здесь НЕ меняются.
+      const nearEdge=Math.random()<0.48;
+      const candidate=nearEdge
+        ? (Math.random()<0.5 ? 0.015+Math.random()*0.045 : 0.940+Math.random()*0.045)
+        : 0.18+Math.random()*0.64;
+      if(!Number.isFinite(prev) || Math.abs(candidate-prev)>0.16){ fraction=candidate; break; }
+      fraction=candidate;
     }
+    sessionStorage.setItem(key,String(fraction));
+    targetPoint=cursor+da*fraction;
     break;
    }
    cursor+=da;
@@ -227,7 +237,8 @@ async function spin(){
   
   const t0=performance.now(),dur=sec*1000;
   let lastSector=-1,nearShown=false;
-  const nearMissVisual=Math.abs((targetPoint-targetStart)/Math.max(targetDa,.000001)-0.5)>0.30;
+  const targetFraction=(targetPoint-targetStart)/Math.max(targetDa,.000001);
+  const nearMissVisual=targetFraction<0.09 || targetFraction>0.91;
   const ease=p=>{
    // Быстрый старт -> длительное быстрое вращение -> мягкое замедление.
    // Никак не влияет на выбранный сервером target.
